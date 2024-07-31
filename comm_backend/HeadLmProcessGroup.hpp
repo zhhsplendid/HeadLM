@@ -4,13 +4,14 @@
 
 namespace comm_backend {
 
+using c10d::Backend;
 using c10d::Work;
 
 class HeadLmProcessGroup : public Backend {
  public:
   class HeadLmWork : public Work {
     // TODO: current this is a class using for pass compile
-  }
+  };
 
   HeadLmProcessGroup(int rank, int size) : Backend(rank, size) {}
 
@@ -24,7 +25,7 @@ class HeadLmProcessGroup : public Backend {
                                     return c10::make_intrusive<HeadLmWork>();
                                 }
   
-}
+};
 
 
 }  // namespace comm_backend
