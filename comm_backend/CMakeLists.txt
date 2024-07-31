@@ -1,3 +1,6 @@
+find_package(Gloo REQUIRED)
+include_directories(${GLOO_INCLUDE_DIRS})
+
 file(GLOB HEADLM_COMM_BACKEND_SRCS
   c10dOps.cpp
   HeadLmProcessGroup.cpp
