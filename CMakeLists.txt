@@ -10,6 +10,8 @@ find_package(Torch REQUIRED)
 message(STATUS "Found Torch Version: ${Torch_VERSION}")
 include_directories(SYSTEM ${TORCH_INCLUDE_DIRS})
 
+include_directories(${HEADLM_SOURCE_DIR})
+
 enable_testing()
 
 include(cmake/third_party.cmake)

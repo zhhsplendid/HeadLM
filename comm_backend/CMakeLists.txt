@@ -10,8 +10,6 @@ message(STATUS "Torch TORCH_INCLUDE_DIRS: ${TORCH_INCLUDE_DIRS}")
 target_include_directories(headlm_comm_backend PUBLIC ${TORCH_INCLUDE_DIRS})
 target_link_libraries(headlm_comm_backend PUBLIC Python3::Python torch)
 
-
-
 file(GLOB HEADLM_COMM_BACKEND_TEST_SRCS HeadLmProcessGroupTest.cpp)
 add_executable(headlm_comm_backend_test ${HEADLM_COMM_BACKEND_TEST_SRCS})
 message(STATUS "GTEST_INCLUDE_DIR: ${GTEST_INCLUDE_DIR}")
