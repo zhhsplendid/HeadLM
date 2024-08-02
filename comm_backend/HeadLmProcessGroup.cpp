@@ -1,5 +1,10 @@
 #include "HeadLmProcessGroup.hpp"
 
+#include <pybind11/stl.h>
+#include <pybind11/complex.h>
+#include <pybind11/functional.h>
+#include <pybind11/chrono.h>
+
 namespace comm_backend {
 
 HeadLmProcessGroup::HeadLmProcessGroup(int rank, int size,
@@ -8,8 +13,12 @@ HeadLmProcessGroup::HeadLmProcessGroup(int rank, int size,
   std::time_t cur_time = std::time(nullptr);
   file_store_ = c10::make_intrusive<FileStore>(
       "/tmp/headlm_" + std::to_string(cur_time), size);
+  auto options = ::c10d::ProcessGroupGloo::Options::create();
+  options->timeout = std::chrono::seconds(20);
+  options->devices.push_back(
+        ::c10d::ProcessGroupGloo::createDeviceForHostname("127.0.0.1"));
   cpu_process_group_ =
-      c10::make_intrusive<ProcessGroupGloo>(file_store_, rank, size);
+      c10::make_intrusive<ProcessGroupGloo>(file_store_, rank, size, options);
 }
 
 c10::intrusive_ptr<Work>
@@ -26,13 +35,16 @@ HeadLmProcessGroup::send(std::vector<at::Tensor> &tensors, int dstRank,
 c10::intrusive_ptr<Work>
 HeadLmProcessGroup::recv(std::vector<at::Tensor> &tensors, int srcRank,
                          int tag) {
-  c10::intrusive_ptr<Work> ret =
+  c10::intrusive_ptr<Work> gloo_recv_work =
       cpu_process_group_->recv(tensors, srcRank, tag);
+  auto ret = c10::make_intrusive<ToDeviceRecvWork>(gloo_recv_work, tensors, origin_device_type_);
+  /*
   if (origin_device_type_ != DeviceType::CPU) {
     for (at::Tensor &tensor : tensors) {
       tensor.to(origin_device_type_);
     }
-  }
+  }*/
+  
   return ret;
 }
 

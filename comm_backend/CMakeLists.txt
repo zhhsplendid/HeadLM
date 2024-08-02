@@ -12,12 +12,14 @@ target_link_libraries(headlm_comm_backend PUBLIC Python3::Python torch)
 
 file(GLOB HEADLM_COMM_BACKEND_TEST_SRCS HeadLmProcessGroupTest.cpp)
 add_executable(headlm_comm_backend_test ${HEADLM_COMM_BACKEND_TEST_SRCS})
-message(STATUS "GTEST_INCLUDE_DIR: ${GTEST_INCLUDE_DIR}")
-target_include_directories(headlm_comm_backend_test PUBLIC ${GTEST_INCLUDE_DIR})
-message(STATUS "GTEST_LIBRARIES: ${GTEST_LIBRARIES}")
+
+#essage(STATUS "GTEST_INCLUDE_DIR: ${GTEST_INCLUDE_DIR}")
+#target_include_directories(headlm_comm_backend_test PUBLIC ${GTEST_INCLUDE_DIR})
+#message(STATUS "GTEST_LIBRARIES: ${GTEST_LIBRARIES}")
 # TODO: Pytorch has conflict with GTest. If we link torch related lib here,
 # There will be link error for undefined reference of EqFailure.
 # We just put a demo test here and will solve it soon.
-target_link_libraries(headlm_comm_backend_test gtest gtest_main)
+
+target_link_libraries(headlm_comm_backend_test headlm_comm_backend Python3::Python torch)
 add_test(headlm_comm_backend_test headlm_comm_backend_test)
 
