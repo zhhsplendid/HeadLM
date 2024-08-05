@@ -25,14 +25,14 @@ if torch.cuda.is_available():
         name="headlm_comm",
         sources=sources,
         include_dirs=include_dirs,
-        extra_compile_args=['-DUSE_C10D_GLOO=1']
+        extra_compile_args=['-DUSE_C10D_GLOO=1', '-DUSE_GLOG']
     )
 else:
     module = cpp_extension.CppExtension(
         name="headlm_comm",
         sources=sources,
         include_dirs=include_dirs,
-        extra_compile_args=['-DUSE_C10D_GLOO=1']
+        extra_compile_args=['-DUSE_C10D_GLOO=1', '-DUSE_GLOG']
     )
 
 '''

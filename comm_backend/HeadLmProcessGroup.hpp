@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ctime>
+#include <memory>
 
 #include <torch/extension.h>
 
@@ -40,10 +41,12 @@ public:
    public:
     ToDeviceRecvWork(c10::intrusive_ptr<Work>& gloo_recv_work,
                      std::vector<at::Tensor> &tensors,
+                     std::shared_ptr<std::vector<at::Tensor>> cpu_buffers,
                      DeviceType device_type) : 
-                     Work(-1, OpType::RECV, "gloo:revc", std::optional<std::vector<at::Tensor>>(tensors)),
+                     Work(-1, OpType::RECV, "gloo:revc", std::optional<std::vector<at::Tensor>>(*cpu_buffers)),
                      gloo_recv_work_(gloo_recv_work),
                      tensors_(tensors),
+                     cpu_buffers_(cpu_buffers),
                      origin_device_type_(device_type) {}
 
     int sourceRank() const override {
@@ -52,17 +55,17 @@ public:
 
     bool wait(std::chrono::milliseconds timeout = kNoTimeout) override {
       bool ret = gloo_recv_work_->wait();
-     
-      if (origin_device_type_ != DeviceType::CPU) {
-        for (at::Tensor &tensor : tensors_) {
-          tensor.to(origin_device_type_);
-        }
-      }
+      moveTensorsToOriginDevice();
+      
       return ret;
     }
 
+    void synchronize() override {
+      gloo_recv_work_->synchronize();
+    }
+
     void abort() override {
-      return gloo_recv_work_->abort();
+      gloo_recv_work_->abort();
     }
 
     uint64_t getSequencenumber() const override {
@@ -71,17 +74,24 @@ public:
 
     std::vector<at::Tensor> result() override {
       auto ans = gloo_recv_work_->result();
-      if (origin_device_type_ != DeviceType::CPU) {
-        for (at::Tensor &tensor : tensors_) {
-          tensor.to(origin_device_type_);
-        }
-      }
+      moveTensorsToOriginDevice();
       return ans;
     }
-      
+
+   protected:
+
+    void moveTensorsToOriginDevice() {
+      if (origin_device_type_ != DeviceType::CPU) {
+        for (size_t i = 0; i < tensors_.size(); ++i) {
+          tensors_[i].copy_(cpu_buffers_->at(i));
+        }
+      }
+    }
+
    private:
      c10::intrusive_ptr<Work> gloo_recv_work_;
-     std::vector<at::Tensor> &tensors_;
+     std::vector<at::Tensor> tensors_;
+     std::shared_ptr<std::vector<at::Tensor>> cpu_buffers_;
      DeviceType origin_device_type_;
   };
 

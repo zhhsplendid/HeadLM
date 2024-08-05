@@ -26,25 +26,64 @@ HeadLmProcessGroup::send(std::vector<at::Tensor> &tensors, int dstRank,
                          int tag) {
   if (origin_device_type_ != DeviceType::CPU) {
     for (at::Tensor &tensor : tensors) {
-      tensor.cpu();
+      tensor = tensor.cpu();
     }
   }
+
   return cpu_process_group_->send(tensors, dstRank, tag);
 }
 
 c10::intrusive_ptr<Work>
 HeadLmProcessGroup::recv(std::vector<at::Tensor> &tensors, int srcRank,
                          int tag) {
-  c10::intrusive_ptr<Work> gloo_recv_work =
-      cpu_process_group_->recv(tensors, srcRank, tag);
-  auto ret = c10::make_intrusive<ToDeviceRecvWork>(gloo_recv_work, tensors, origin_device_type_);
+  if (origin_device_type_ == DeviceType::CPU) {
+    return cpu_process_group_->recv(tensors, srcRank, tag);
+  }
+
   /*
+  std::vector<at::Tensor> cpu_tensors;
+  for (at::Tensor &tensor : tensors) {
+    cpu_tensors.push_back(tensor.to("cpu"));
+  }*/
+  auto cpu_tensors = std::make_shared<std::vector<at::Tensor>>();
+  for (at::Tensor &tensor : tensors) {
+    cpu_tensors->push_back(tensor.to("cpu"));
+  }
+
+  c10::intrusive_ptr<Work> gloo_recv_work = cpu_process_group_->recv(*cpu_tensors, srcRank, tag);
+
+  /*
+  for (size_t i = 0; i < tensors.size(); ++i) {
+    tensors[i].copy_(copy_tensors[i].to(origin_device_type_));
+  }
+  */
+  /*
+  gloo_recv_work.synchronize();
+  std::cout << "Huihuang copy to gpu " << std::endl;
   if (origin_device_type_ != DeviceType::CPU) {
     for (at::Tensor &tensor : tensors) {
-      tensor.to(origin_device_type_);
+      tensor = tensor.to(origin_device_type_);
     }
   }*/
+   /*
+  if (origin_device_type_ != DeviceType::CPU) {
+    std::cout << "&(tensor[0]) = " << &(tensors[0]) << std::endl;
+    std::cout << "&(copy_tensor[0]) = " << &(copy_tensors[0]) << std::endl;
+    for (size_t i = 0; i < tensors.size(); ++i) {
+      
+      //tensors[i] = copy_tensors[i].to(origin_device_type_);
+      //tensors[i] = tensors[i].cpu();
+
+      tensors[i].index_put_({0, 0, 0}, 1192);
+      //tensors[i] = tensors[i].to(origin_device_type_);
+      std::cout << "gpu_assign, &(tensor[0]) = " << &(tensors[0]) << std::endl;
+    }
+  }
+  return gloo_recv_work;
+  */
+
   
+  auto ret = c10::make_intrusive<ToDeviceRecvWork>(gloo_recv_work, tensors, cpu_tensors, origin_device_type_);
   return ret;
 }
 

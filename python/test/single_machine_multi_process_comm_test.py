@@ -9,23 +9,21 @@ import headlm_comm
 
 """Blocking point-to-point communication."""
 def run(rank, size):
-    tensor = torch.ones([1, 2, 3], device="cuda") * rank
-    #tensor.cuda()
-    print(f"Before send/recv, tensor.device = {tensor.device}") 
+    tensor = torch.ones([2, 3], device="cuda") * rank
+
     if rank == 0:
         # Send the tensor to process 1
         dist.send(tensor=tensor, dst=1)
     else:
         # Receive tensor from process 0
         dist.recv(tensor=tensor, src=0)
-    print(f"After send/recv, tensor.device = {tensor.device}")
-    tensor.to("cpu")
-    print('Rank ', rank, ' has data ', tensor[0], '\n')
+    print(f"Rank {rank} After send/recv, tensor.device = {tensor.device}")
+    print('Rank ', rank, ' has data ', tensor, '\n')
 
 def init_process(rank, size, fn, backend='headlm'):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = '127.0.0.1' # 'localhost'
-    os.environ['MASTER_PORT'] = '29500'
+    os.environ['MASTER_PORT'] = '29512'
     dist.init_process_group(backend, rank=rank, world_size=size)
     fn(rank, size)
 
