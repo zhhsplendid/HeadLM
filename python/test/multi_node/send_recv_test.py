@@ -7,6 +7,13 @@ import torch.distributed as dist
 # importing makes torch.distributed recognize `headlm_comm` as a valid backend.
 import headlm_comm
 
+# Example command to run this python script
+# python -m torch.distributed.launch \
+#   --nproc_per_node=8 --nnodes=2 --node_rank=TODO \
+#   --master_addr=TODO --master_port=TODO \
+#   send_recv_test.py \
+#   --backend=headlm --device=cpu
+
 
 def run(backend, device, world_rank, world_size):
     dist.init_process_group(backend, rank=world_rank, world_size=world_size)
