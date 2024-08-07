@@ -34,17 +34,17 @@ def run(backend, device, world_rank, world_size):
 
     dist.destroy_process_group()
 
-def test_base(backend, device):
-    LOCAL_RANK = int(os.environ['LOCAL_RANK'])
+def test_base(backend, device, local_rank):
     WORLD_SIZE = int(os.environ['WORLD_SIZE'])
     WORLD_RANK = int(os.environ['WORLD_RANK'])
-    run(backend, device, WORLD_RANK, WORLD_SIZE)
+    run(backend, device, local_rank, WORLD_SIZE)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", type=str, default="cpu", choices=['cuda', 'cpu'])
     parser.add_argument("--backend", type=str, default="headlm", choices=['headlm', 'nccl', 'gloo'])
+    parser.add_argument("--local-rank", type=int)
     args = parser.parse_args()
 
-    test_base(args.backend, args.device)
+    test_base(args.backend, args.device, args.local_rank)
