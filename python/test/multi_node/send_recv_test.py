@@ -9,17 +9,18 @@ import headlm_comm
 
 # Example command to run this python script
 # python -m torch.distributed.launch \
-#   --nproc_per_node=8 --nnodes=2 --node_rank=TODO \
-#   --master_addr=TODO --master_port=TODO \
-#   send_recv_test.py \
-#   --backend=headlm --device=cpu
+#  --nproc_per_node=8 --nnodes=2 --node_rank=TODO \
+#  --master_addr=TODO --master_port=TODO \
+#  python/test/multi_node/send_recv_test.py \
+#  --backend=headlm --device=cpu --nproc_per_node=8 --nnodes=2 --node_rank=TODO
 
 
 def run(backend, device, local_rank, world_rank, world_size):
     dist.init_process_group(backend, rank=world_rank, world_size=world_size)
     if device != "cpu":
         device = device + ":" + str(local_rank)
-    tensor = torch.ones((2, 3), device=device, dtype=torch.float32) * world_rank
+    tensor = torch.ones(
+        (2, 3), device=device, dtype=torch.float32) * world_rank
 
     print(f"Rank {world_rank} before sending data")
     if world_rank == 0:
@@ -29,13 +30,17 @@ def run(backend, device, local_rank, world_rank, world_size):
     else:
         dist.recv(tensor=tensor, src=0)
         print(f"Rank {world_rank} has received data from Rank 0")
-    
-    print(f"Rank {world_rank} After send/recv, tensor.device = {tensor.device}")
+
+    print(
+        f"Rank {world_rank} After send/recv, tensor.device = {tensor.device}")
     print(f"Rank {world_rank} has data {tensor}")
 
-    assert torch.allclose(torch.zeros((2, 3), device=device, dtype=torch.float32), tensor), "After send/recv, tensor values should be zeros"
+    assert torch.allclose(
+        torch.zeros((2, 3), device=device, dtype=torch.float32),
+        tensor), "After send/recv, tensor values should be zeros"
 
     dist.destroy_process_group()
+
 
 def test_base(args):
     backend = args.backend
@@ -48,8 +53,14 @@ def test_base(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", type=str, default="cpu", choices=['cuda', 'cpu'])
-    parser.add_argument("--backend", type=str, default="headlm", choices=['headlm', 'nccl', 'gloo'])
+    parser.add_argument("--device",
+                        type=str,
+                        default="cpu",
+                        choices=['cuda', 'cpu'])
+    parser.add_argument("--backend",
+                        type=str,
+                        default="headlm",
+                        choices=['headlm', 'nccl', 'gloo'])
     parser.add_argument("--local-rank", type=int)
     parser.add_argument("--nnodes", type=int)
     parser.add_argument("--nproc_per_node", type=int)
