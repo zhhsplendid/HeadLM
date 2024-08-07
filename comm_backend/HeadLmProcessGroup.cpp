@@ -1,24 +1,32 @@
 #include "HeadLmProcessGroup.hpp"
 
-#include <pybind11/stl.h>
+#include <cstdlib>
+
+#include <pybind11/chrono.h>
 #include <pybind11/complex.h>
 #include <pybind11/functional.h>
-#include <pybind11/chrono.h>
+#include <pybind11/stl.h>
 
 namespace comm_backend {
 
-HeadLmProcessGroup::HeadLmProcessGroup(int rank, int size,
-                                       DeviceType device_type)
+HeadLmProcessGroup::HeadLmProcessGroup(
+    const c10::intrusive_ptr<::c10d::Store> &store, int rank, int size,
+    const std::chrono::duration<float> &timeout, DeviceType device_type)
     : Backend(rank, size), origin_device_type_(device_type) {
-  std::time_t cur_time = std::time(nullptr);
-  file_store_ = c10::make_intrusive<FileStore>(
-      "/tmp/headlm_" + std::to_string(cur_time), size);
-  auto options = ::c10d::ProcessGroupGloo::Options::create();
-  options->timeout = std::chrono::seconds(20);
+  std::string file_store_name = "/tmp/headlm_file_store";
+  file_store_ = c10::make_intrusive<FileStore>(file_store_name, size);
+  auto timeout_millis = std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
+  auto options = ::c10d::ProcessGroupGloo::Options::create(timeout_millis);
+  options->devices.push_back(ProcessGroupGloo::createDefaultDevice());
+  /*
+  char* host_name_char_ptr = std::getenv("HEADLM_HOSTNAME");
+  std::string host_name = host_name_char_ptr == nullptr ? "127.0.0.1" :
+  std::string(host_name_char_ptr); options->timeout = std::chrono::seconds(20);
   options->devices.push_back(
-        ::c10d::ProcessGroupGloo::createDeviceForHostname("127.0.0.1"));
+        ::c10d::ProcessGroupGloo::createDeviceForHostname(host_name));
+  */
   cpu_process_group_ =
-      c10::make_intrusive<ProcessGroupGloo>(file_store_, rank, size, options);
+      c10::make_intrusive<ProcessGroupGloo>(store, rank, size, options);
 }
 
 c10::intrusive_ptr<Work>
@@ -45,10 +53,11 @@ HeadLmProcessGroup::recv(std::vector<at::Tensor> &tensors, int srcRank,
     cpu_tensors->push_back(tensor.to("cpu"));
   }
 
-  c10::intrusive_ptr<Work> gloo_recv_work = cpu_process_group_->recv(*cpu_tensors, srcRank, tag);
+  c10::intrusive_ptr<Work> gloo_recv_work =
+      cpu_process_group_->recv(*cpu_tensors, srcRank, tag);
 
-  
-  auto ret = c10::make_intrusive<ToDeviceRecvWork>(gloo_recv_work, tensors, cpu_tensors, origin_device_type_);
+  auto ret = c10::make_intrusive<ToDeviceRecvWork>(
+      gloo_recv_work, tensors, cpu_tensors, origin_device_type_);
   return ret;
 }
 
@@ -57,7 +66,8 @@ c10::intrusive_ptr<Backend> HeadLmProcessGroup::createHeadLmProcessGroup(
     const std::chrono::duration<float> &timeout) {
   // TODO: hardcode the CUDA here for fast test. Should change parameter after
   // we know it works
-  return c10::make_intrusive<HeadLmProcessGroup>(rank, size, DeviceType::CUDA);
+  return c10::make_intrusive<HeadLmProcessGroup>(store, rank, size, timeout,
+                                                 DeviceType::CUDA);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
