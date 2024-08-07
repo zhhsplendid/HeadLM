@@ -13,18 +13,10 @@ HeadLmProcessGroup::HeadLmProcessGroup(
     const c10::intrusive_ptr<::c10d::Store> &store, int rank, int size,
     const std::chrono::duration<float> &timeout, DeviceType device_type)
     : Backend(rank, size), origin_device_type_(device_type) {
-  std::string file_store_name = "/tmp/headlm_file_store";
-  file_store_ = c10::make_intrusive<FileStore>(file_store_name, size);
   auto timeout_millis = std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
   auto options = ::c10d::ProcessGroupGloo::Options::create(timeout_millis);
   options->devices.push_back(ProcessGroupGloo::createDefaultDevice());
-  /*
-  char* host_name_char_ptr = std::getenv("HEADLM_HOSTNAME");
-  std::string host_name = host_name_char_ptr == nullptr ? "127.0.0.1" :
-  std::string(host_name_char_ptr); options->timeout = std::chrono::seconds(20);
-  options->devices.push_back(
-        ::c10d::ProcessGroupGloo::createDeviceForHostname(host_name));
-  */
+
   cpu_process_group_ =
       c10::make_intrusive<ProcessGroupGloo>(store, rank, size, options);
 }
