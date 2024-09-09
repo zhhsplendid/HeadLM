@@ -13,8 +13,8 @@ class TestSingleMachineMultiProcessSendRecv(unittest.TestCase):
     """Blocking point-to-point communication."""
 
     def send_recv_func(self, rank, device):
-
-        tensor = torch.ones([2, 3], device=device) * rank
+        device_with_rank = f"{device}:{rank}" if device == "gpu" else device
+        tensor = torch.ones([2, 3], device=device_with_rank) * rank
 
         if rank == 0:
             # Send the tensor to process 1
@@ -25,7 +25,7 @@ class TestSingleMachineMultiProcessSendRecv(unittest.TestCase):
         print(f"Rank {rank} After send/recv, tensor.device = {tensor.device}")
         print('Rank ', rank, ' has data ', tensor, '\n')
         self.assertTrue(
-            torch.allclose(torch.zeros([2, 3], device=device), tensor))
+            torch.allclose(torch.zeros([2, 3], device=device_with_rank), tensor))
 
     def init_process(self, rank, size, fn, device, backend='headlm'):
         """ Initialize the distributed environment. """
