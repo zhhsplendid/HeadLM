@@ -52,7 +52,6 @@ public:
     bool wait(std::chrono::milliseconds timeout = kNoTimeout) override {
       bool ret = gloo_recv_work_->wait();
       moveTensorsToOriginDevice();
-
       return ret;
     }
 
@@ -110,7 +109,6 @@ public:
 
 private:
   DeviceType origin_device_type_;
-  c10::intrusive_ptr<FileStore> file_store_;
   c10::intrusive_ptr<ProcessGroupGloo> cpu_process_group_;
 };
 

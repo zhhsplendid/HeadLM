@@ -23,3 +23,4 @@ add_executable(headlm_comm_backend_test ${HEADLM_COMM_BACKEND_TEST_SRCS})
 target_link_libraries(headlm_comm_backend_test headlm_comm_backend Python3::Python torch)
 add_test(headlm_comm_backend_test headlm_comm_backend_test)
 
+add_subdirectory(comm_backend)
