@@ -7,6 +7,7 @@ namespace comm_backend {
 namespace head_ccl {
 namespace transport {
 
+//TODO: not completed
 int getRoceVersion(const std::string& deviceName,
                    int portNum,
                    int groupIdIndex) {
