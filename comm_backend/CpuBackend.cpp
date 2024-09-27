@@ -1,4 +1,4 @@
-#include "adapter/CpuBackend.hpp"
+#include "CpuBackend.hpp"
 
 #include <cstdlib>
 
@@ -8,13 +8,13 @@
 #include <pybind11/stl.h>
 
 namespace comm_backend {
-namespace adapter {
 
-CpuBackend::CpuBackend(
-    const c10::intrusive_ptr<::c10d::Store> &store, int rank, int size,
-    const std::chrono::duration<float> &timeout, DeviceType device_type)
+CpuBackend::CpuBackend(const c10::intrusive_ptr<::c10d::Store> &store, int rank,
+                       int size, const std::chrono::duration<float> &timeout,
+                       DeviceType device_type)
     : Backend(rank, size), origin_device_type_(device_type) {
-  auto timeout_millis = std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
+  auto timeout_millis =
+      std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
   auto options = ::c10d::ProcessGroupGloo::Options::create(timeout_millis);
   options->devices.push_back(ProcessGroupGloo::createDefaultDevice());
 
@@ -22,9 +22,8 @@ CpuBackend::CpuBackend(
       c10::make_intrusive<ProcessGroupGloo>(store, rank, size, options);
 }
 
-c10::intrusive_ptr<Work>
-CpuBackend::send(std::vector<at::Tensor> &tensors, int dstRank,
-                         int tag) {
+c10::intrusive_ptr<Work> CpuBackend::send(std::vector<at::Tensor> &tensors,
+                                          int dstRank, int tag) {
   if (origin_device_type_ != DeviceType::CPU) {
     for (at::Tensor &tensor : tensors) {
       tensor = tensor.cpu();
@@ -34,9 +33,8 @@ CpuBackend::send(std::vector<at::Tensor> &tensors, int dstRank,
   return cpu_process_group_->send(tensors, dstRank, tag);
 }
 
-c10::intrusive_ptr<Work>
-CpuBackend::recv(std::vector<at::Tensor> &tensors, int srcRank,
-                         int tag) {
+c10::intrusive_ptr<Work> CpuBackend::recv(std::vector<at::Tensor> &tensors,
+                                          int srcRank, int tag) {
   if (origin_device_type_ == DeviceType::CPU) {
     return cpu_process_group_->recv(tensors, srcRank, tag);
   }
@@ -54,5 +52,4 @@ CpuBackend::recv(std::vector<at::Tensor> &tensors, int srcRank,
   return ret;
 }
 
-} // namespace adapter
 } // namespace comm_backend

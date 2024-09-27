@@ -24,7 +24,6 @@
 #include <iostream>
 
 namespace comm_backend {
-namespace adapter {
 
 using c10::DeviceType;
 
@@ -86,9 +85,9 @@ public:
     DeviceType origin_device_type_;
   };
 
-  CpuBackend(const c10::intrusive_ptr<::c10d::Store> &store, int rank,
-                     int size, const std::chrono::duration<float> &timeout,
-                     DeviceType device_type);
+  CpuBackend(const c10::intrusive_ptr<::c10d::Store> &store, int rank, int size,
+             const std::chrono::duration<float> &timeout,
+             DeviceType device_type);
 
   c10::intrusive_ptr<Work> send(std::vector<at::Tensor> &tensors, int dstRank,
                                 int tag) override;
@@ -96,11 +95,9 @@ public:
   c10::intrusive_ptr<Work> recv(std::vector<at::Tensor> &tensors, int srcRank,
                                 int tag) override;
 
-
 private:
   DeviceType origin_device_type_;
   c10::intrusive_ptr<ProcessGroupGloo> cpu_process_group_;
 };
 
-} // namespace adapter
 } // namespace comm_backend

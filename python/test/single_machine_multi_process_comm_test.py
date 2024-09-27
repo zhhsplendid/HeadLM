@@ -25,7 +25,8 @@ class TestSingleMachineMultiProcessSendRecv(unittest.TestCase):
         print(f"Rank {rank} After send/recv, tensor.device = {tensor.device}")
         print('Rank ', rank, ' has data ', tensor, '\n')
         self.assertTrue(
-            torch.allclose(torch.zeros([2, 3], device=device_with_rank), tensor))
+            torch.allclose(torch.zeros([2, 3], device=device_with_rank),
+                           tensor))
 
     def init_process(self, rank, size, fn, device, backend='headlm'):
         """ Initialize the distributed environment. """
@@ -51,7 +52,7 @@ class TestSingleMachineMultiProcessSendRecv(unittest.TestCase):
         for p in processes:
             p.join()
 
-    def _est_cpu(self):
+    def _test_cpu(self):
         self._test_base("cpu")
 
     def test_cuda(self):
