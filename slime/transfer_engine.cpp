@@ -11,12 +11,10 @@ mr_hash_key_t TransferEngine::registerLocalMemory(void *data_ptr,
   throw std::runtime_error("NotImplementedError");
 }
 
-error_code_t TransferEngine::transferBatch(std::string segment_id,
-                                           std::vector<mr_hash_key_t> targetKey,
-                                           std::vector<int64_t> targetOffset,
-                                           std::vector<mr_hash_key_t> sourceKey,
-                                           std::vector<int64_t> sourceOffset,
-                                           uint64_t length) {
+trans_status_t TransferEngine::transferBatch(
+    std::string segment_id, std::vector<mr_hash_key_t> targetKey,
+    std::vector<int64_t> targetOffset, std::vector<mr_hash_key_t> sourceKey,
+    std::vector<int64_t> sourceOffset, uint64_t length) {
   throw std::runtime_error("NotImplementedError");
 }
 } // namespace slime

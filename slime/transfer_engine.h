@@ -5,7 +5,7 @@
 namespace slime {
 
 using mr_hash_key_t = uint64_t;
-typedef enum { SUCCESS } error_code_t;
+typedef enum { SUCCESS } trans_status_t;
 
 class TransferEngine {
 public:
@@ -15,12 +15,12 @@ public:
 
   mr_hash_key_t registerLocalMemory(void *data_ptr, uint64_t length);
 
-  error_code_t transferBatch(std::string segment_id,
-                             std::vector<mr_hash_key_t> targetKey,
-                             std::vector<int64_t> targetOffset,
-                             std::vector<mr_hash_key_t> sourceKey,
-                             std::vector<int64_t> sourceOffset,
-                             uint64_t length);
+  trans_status_t transferBatch(std::string segment_id,
+                               std::vector<mr_hash_key_t> targetKey,
+                               std::vector<int64_t> targetOffset,
+                               std::vector<mr_hash_key_t> sourceKey,
+                               std::vector<int64_t> sourceOffset,
+                               uint64_t length);
 };
 
 } // namespace slime
