@@ -1,6 +1,25 @@
 cmake_minimum_required(VERSION 3.10)
 
 project(slime C CXX CUDA)
-add_library(slime transfer_engine.cpp)
+
+include_directories(${PROJECT_SOURCE_DIR})
+
+add_library(
+    slime
+    SHARED
+    transfer_engine.cpp
+    rdma_transport.cpp
+    ibv_helper.cpp
+)
+target_link_libraries(slime PUBLIC ibverbs)
+
+# Python Wrapper
+find_package(pybind11 REQUIRED)
+pybind11_add_module(
+    _slime_c
+    bind.cpp
+)
+target_link_libraries(_slime_c PUBLIC slime)
+
 
 
