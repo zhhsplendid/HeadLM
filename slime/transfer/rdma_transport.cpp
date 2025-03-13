@@ -25,30 +25,11 @@ struct ibv_comp_channel *comp_channel_ = nullptr;
 struct ibv_cq *cq_ = nullptr;
 struct ibv_qp *qp_ = nullptr;
 
-int64_t RDMAContext::modify_qp_to_init() {
-  struct ibv_qp_attr attr = {};
-  attr.qp_state = IBV_QPS_INIT;
-  attr.port_num = ib_port_;
-  attr.pkey_index = 0;
-  attr.qp_access_flags =
-      IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE;
-
-  int flags =
-      IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
-
-  int ret = ibv_modify_qp(qp_, &attr, flags);
-  if (ret) {
-    SLIME_ABORT("Failed to modify QP to INIT");
-    return ret;
-  }
-  return 0;
-}
-
-int64_t RDMAContext::create_endpoint(std::string remote_server_addr) {
+int32_t RDMAContext::create_endpoint(std::string remote_server_addr) {
   throw std::runtime_error("NotImplementedError");
 }
 
-int64_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port,
+int32_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port,
                                        std::string link_type) {
   struct ibv_device **dev_list;
   struct ibv_device *ib_dev;
@@ -135,4 +116,44 @@ int64_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port,
 
   return 0;
 }
+
+int32_t RDMAContext::modify_qp_to_init() {
+  struct ibv_qp_attr attr = {};
+  attr.qp_state = IBV_QPS_INIT;
+  attr.port_num = ib_port_;
+  attr.pkey_index = 0;
+  attr.qp_access_flags =
+      IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE;
+
+  int flags =
+      IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
+
+  int ret = ibv_modify_qp(qp_, &attr, flags);
+  if (ret) {
+    SLIME_ABORT("Failed to modify QP to INIT");
+    return ret;
+  }
+  return 0;
+}
+
+int32_t RDMAContext::modify_qp_to_rts() {
+  struct ibv_qp_attr attr = {};
+  attr.qp_state = IBV_QPS_RTS;
+  attr.timeout = 14;
+  attr.retry_cnt = 7;
+  attr.rnr_retry = 7;
+  attr.sq_psn = 0; // TODO local_info.psn; // Use 0 or match with local PSN
+  attr.max_rd_atomic = 1;
+
+  int flags = IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
+              IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC;
+
+  int ret = ibv_modify_qp(qp_, &attr, flags);
+  if (ret) {
+    throw std::runtime_error("Failed to modify QP to RTS");
+    return ret;
+  }
+  return 0;
+}
+
 } // namespace slime
