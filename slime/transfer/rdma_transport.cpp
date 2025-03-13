@@ -136,13 +136,60 @@ int32_t RDMAContext::modify_qp_to_init() {
   return 0;
 }
 
+int32_t RDMAContext::modify_qp_to_rtr() {
+  struct ibv_qp_attr attr = {};
+    attr.qp_state = IBV_QPS_RTR;
+
+    // update MTU
+    if (remote_info_.mtu != active_mtu_) {
+      std::string warn_str = "remote MTU: "
+          + std::to_string(1 << ((uint32_t)remote_info_.mtu + 7))
+          + " , local MTU: {} is not the same, update to minimal MTU"
+          + std::to_string(1 << ((uint32_t)active_mtu_ + 7));
+       SLIME_WARN(warn_str);
+    }
+    attr.path_mtu = (enum ibv_mtu) std::min((uint32_t)active_mtu_, (uint32_t)remote_info_.mtu);
+
+    attr.dest_qp_num = remote_info_.qpn;
+    attr.rq_psn = remote_info_.psn;
+    attr.max_dest_rd_atomic = 4;
+    attr.min_rnr_timer = 12;
+    attr.ah_attr.dlid = 0;
+    attr.ah_attr.sl = 0;
+    attr.ah_attr.src_path_bits = 0;
+    attr.ah_attr.port_num = ib_port_;
+
+    if (gidx_ == -1) {
+        // IB
+        attr.ah_attr.dlid = remote_info_.lid;
+        attr.ah_attr.is_global = 0;
+    }
+    else {
+        // RoCE v2
+        attr.ah_attr.is_global = 1;
+        attr.ah_attr.grh.dgid = remote_info_.gid;
+        attr.ah_attr.grh.sgid_index = gidx_;  // local gid
+        attr.ah_attr.grh.hop_limit = 1;
+    }
+
+    int flags = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN |
+                IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
+
+    int ret = ibv_modify_qp(qp_, &attr, flags);
+    if (ret) {
+        std::runtime_error("Failed to modify QP to RTR");
+        return ret;
+    }
+    return 0;
+}
+
 int32_t RDMAContext::modify_qp_to_rts() {
   struct ibv_qp_attr attr = {};
   attr.qp_state = IBV_QPS_RTS;
   attr.timeout = 14;
   attr.retry_cnt = 7;
   attr.rnr_retry = 7;
-  attr.sq_psn = 0; // TODO local_info.psn; // Use 0 or match with local PSN
+  attr.sq_psn = local_info_.psn; // Use 0 or match with local PSN?
   attr.max_rd_atomic = 1;
 
   int flags = IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
@@ -155,5 +202,7 @@ int32_t RDMAContext::modify_qp_to_rts() {
   }
   return 0;
 }
+
+
 
 } // namespace slime
