@@ -10,6 +10,7 @@ add_library(
     slime
     SHARED
     transfer_engine.cpp
+    utils.cpp
 )
 target_link_libraries(slime PUBLIC ibverbs)
 target_link_libraries(slime PUBLIC rdma_transfer)

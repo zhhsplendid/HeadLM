@@ -1,12 +1,15 @@
 #include "rdma_transport.h"
 #include "ibv_helper.h"
 #include "logging.h"
+#include "utils.h"
 
+#include <arpa/inet.h>
 #include <bits/socket.h>
 #include <infiniband/verbs.h>
 #include <stdexcept>
 
 namespace slime {
+namespace transfer {
 
 // this number should be big for lots of RMDA_WRITE requests
 #define MAX_SEND_WR 8192
@@ -27,6 +30,36 @@ struct ibv_qp *qp_ = nullptr;
 
 int32_t RDMAContext::create_endpoint(std::string remote_server_addr) {
   throw std::runtime_error("NotImplementedError");
+}
+
+int32_t RDMAContext::connect_client(client_config_t config) {
+    signal(SIGSEGV, signal_handler);
+    signal(SIGABRT, signal_handler);
+    signal(SIGBUS, signal_handler);
+    signal(SIGFPE, signal_handler);
+    signal(SIGILL, signal_handler);
+
+    struct sockaddr_in serv_addr;
+    // create socket
+    if ((sock_ = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        SLIME_ERROR("Failed to create socket");
+        return -1;
+    }
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(config.service_port);
+
+    // always connect to localhost
+    if (inet_pton(AF_INET, config.host_addr.data(), &serv_addr.sin_addr) <= 0) {
+        SLIME_ERROR("Invalid address/ Address not supported");
+        return -1;
+    }
+
+    if (connect(sock_, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        SLIME_ERROR("Failed to connect to server");
+        return -1;
+    }
+    return 0;
 }
 
 int32_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port,
@@ -205,4 +238,5 @@ int32_t RDMAContext::modify_qp_to_rts() {
 
 
 
+} // namespace transfer
 } // namespace slime

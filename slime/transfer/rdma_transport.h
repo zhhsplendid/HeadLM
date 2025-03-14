@@ -1,18 +1,14 @@
 #pragma once
 
+#include <arpa/inet.h>
 #include <infiniband/verbs.h>
 #include <stdexcept>
+#include <sys/socket.h>
 
+#include "transfer/config.h"
 
 namespace slime {
-
-typedef struct __attribute__((packed)) rdma_conn_info_t {
-    uint32_t qpn;
-    uint32_t psn;
-    union ibv_gid gid;  // RoCE v2
-    uint16_t lid;       // IB
-    uint32_t mtu;       // peers should have the same mtu
-} rdma_conn_info_t;
+namespace transfer {
 
 class RDMAContext {
 public:
@@ -23,6 +19,8 @@ public:
   }
 
   void construct() { throw std::runtime_error("NotImplementedError"); }
+
+  int32_t connect_client(client_config_t config);
 
   // Modify Queue Pair (qp) state to Init
   int32_t modify_qp_to_init();
@@ -46,6 +44,18 @@ private:
 
   rdma_conn_info_t local_info_;
   rdma_conn_info_t remote_info_;
+
+  // tcp socket
+  int sock_ = 0;
+
+  // rdma connections
+  struct ibv_context *ib_ctx_ = NULL;
+  struct ibv_pd *pd_ = NULL;
+  struct ibv_cq *cq_ = NULL;
+  struct ibv_qp *qp_ = NULL;
+  int gidx_ = -1;
+  int lid_ = -1;
+  uint8_t ib_port_ = -1;
 };
 
 class RDMATransport {
@@ -55,4 +65,5 @@ public:
   void init() { std::runtime_error("NotImplementedError"); }
 };
 
+} // namespace transfer
 } // namespace slime

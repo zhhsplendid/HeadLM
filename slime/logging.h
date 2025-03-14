@@ -56,6 +56,8 @@ inline int get_log_level() {
     abort();                                                               \
   }
 
+#define SLIME_ERROR(Msg) SLIME_ABORT(Msg)
+
 #define SLIME_LOG_INFO(Msg)                                              \
   {                                                                          \
     if (get_log_level() >= 1) {                                              \
