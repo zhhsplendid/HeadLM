@@ -4,6 +4,7 @@ project(slime C CXX CUDA)
 
 include_directories(${PROJECT_SOURCE_DIR})
 
+add_subdirectory(thirdparty/flatbuffers)
 add_subdirectory(utils)
 add_subdirectory(info_struct)
 add_subdirectory(transfer)

@@ -1,7 +1,14 @@
 #pragma once
 
+
 #include <arpa/inet.h>
+#include <atomic>
+#include <condition_variable>
+#include <boost/lockfree/spsc_queue.hpp>
+#include <deque>
+#include <future>
 #include <infiniband/verbs.h>
+#include <mutex>
 #include <stdexcept>
 #include <sys/socket.h>
 
@@ -9,6 +16,18 @@
 
 namespace slime {
 namespace transfer {
+
+// RDMA send buffer
+// because write_cache will be invoked asynchronously,
+// so each request will have a standalone send buffer.
+struct SendBuffer {
+  void *buffer_ = NULL;
+  struct ibv_mr *mr_ = NULL;
+
+  SendBuffer(struct ibv_pd *pd, size_t size);
+  SendBuffer(const SendBuffer &) = delete;
+  ~SendBuffer();
+};
 
 class RDMAContext {
 public:
@@ -22,7 +41,22 @@ public:
 
   int32_t connect_client(const client_config_t& config);
 
-  //int32_t setup_rdma(const client_config_t& config);
+  int32_t setup_rdma(const client_config_t& config);
+
+
+
+  int32_t create_endpoint(std::string remote_server_addr);
+
+  int32_t register_metadata(std::string metadata_endpoint) {
+    throw std::runtime_error("NotImplementedError");
+  }
+
+  int32_t init_rdma_context(const std::string& dev_name,
+    uint8_t ib_port,
+    const std::string& link_type);
+
+private:
+  int32_t exchange_conn_info();
 
   // Modify Queue Pair (qp) state to Init
   int32_t modify_qp_to_init();
@@ -33,15 +67,14 @@ public:
   // Modify Queue Pair (qp) state to Ready to Send (rts)
   int32_t modify_qp_to_rts();
 
-  int32_t init_rdma_context(const std::string& dev_name,
-                            uint8_t ib_port,
-                            const std::string& link_type);
+  void cq_handler();
 
-  int32_t create_endpoint(std::string remote_server_addr);
+  SendBuffer *get_send_buffer();
 
-  int32_t register_metadata(std::string metadata_endpoint) {
-    throw std::runtime_error("NotImplementedError");
-  }
+  void release_send_buffer(SendBuffer *buffer);
+
+  void post_recv(struct ibv_sge *recv_sge, rdma_info_base *info);
+
 private:
   ibv_mtu active_mtu_;
 
@@ -59,6 +92,32 @@ private:
   int gidx_ = -1;
   int lid_ = -1;
   uint8_t ib_port_ = -1;
+
+  /*
+    This is MAX_RECV_WR not MAX_SEND_WR,
+    because server also has the same number of buffers
+    */
+  boost::lockfree::spsc_queue<SendBuffer *> send_buffers_{MAX_RECV_WR};
+
+  // this recv buffer is used in
+  // 1. allocate rdma
+  // 2. recv IMM data, although IMM DATA is not put into recv_buffer,
+  // but for compatibility, we still use a zero-length recv_buffer.
+  void *recv_buffer_ = NULL;
+  struct ibv_mr *recv_mr_ = NULL;
+
+  std::atomic<int> rdma_inflight_count_{0};
+  std::atomic<bool> stop_{false};
+  std::future<void> cq_future_;  // cq thread
+
+  // protect rdma_inflight_count
+  std::mutex mutex_;
+  std::condition_variable cv_;
+
+  // protect ibv_post_send, outstanding_rdma_writes_queue
+  std::mutex rdma_post_send_mutex_;
+  std::atomic<int> outstanding_rdma_writes_{0};
+  std::deque<std::pair<struct ibv_send_wr *, struct ibv_sge *>> outstanding_rdma_writes_queue_;
 };
 
 class RDMATransport {
