@@ -17,27 +17,6 @@
 namespace slime {
 namespace transfer {
 
-// this number should be big for lots of RMDA_WRITE requests
-#define MAX_SEND_WR 8192
-
-// this is only used for recving RDMA_SEND or IMM data. this should be bigger
-// than max layers of model.
-#define MAX_RECV_WR 64
-
-struct ibv_context *ib_ctx_;
-uint8_t ib_port_ = -1;
-int64_t gidx_ = -1;
-uint16_t lid_ = 0;
-ibv_mtu active_mtu_;
-struct ibv_pd *pd_ = nullptr;
-struct ibv_comp_channel *comp_channel_ = nullptr;
-struct ibv_cq *cq_ = nullptr;
-struct ibv_qp *qp_ = nullptr;
-
-int32_t RDMAContext::create_endpoint(std::string remote_server_addr) {
-  throw std::runtime_error("NotImplementedError");
-}
-
 int32_t RDMAContext::connect_client(const client_config_t &config) {
   signal(SIGSEGV, signal_handler);
   signal(SIGABRT, signal_handler);
@@ -99,7 +78,8 @@ int32_t RDMAContext::exchange_conn_info() {
   }
 
   if (return_code != FINISH) {
-    SLIME_ERROR("Failed to exchange connection information, return code: " + std::to_string(return_code));
+    SLIME_ERROR("Failed to exchange connection information, return code: " +
+                std::to_string(return_code));
     return -1;
   }
 
@@ -162,19 +142,23 @@ int RDMAContext::setup_rdma(const client_config_t &config) {
   return 0;
 }
 
-SendBuffer* RDMAContext::get_send_buffer() {
+SendBuffer *RDMAContext::get_send_buffer() {
   /*
   if send buffer list is empty,we just report error, and return NULL
-  normal user should not have too many inflight requests, so we just report error
+  normal user should not have too many inflight requests, so we just report
+  error
   */
-  SLIME_ASSERT(!send_buffers_.empty(), "get_send_buffer when send_buffers_ is empty()");
+  SLIME_ASSERT(!send_buffers_.empty(),
+               "get_send_buffer when send_buffers_ is empty()");
 
   SendBuffer *buffer;
   SLIME_ASSERT(send_buffers_.pop(buffer), "pop buffer failed");
   return buffer;
 }
 
-void RDMAContext::release_send_buffer(SendBuffer *buffer) { send_buffers_.push(buffer); }
+void RDMAContext::release_send_buffer(SendBuffer *buffer) {
+  send_buffers_.push(buffer);
+}
 
 void RDMAContext::post_recv(struct ibv_sge *recv_sge, rdma_info_base *info) {
   struct ibv_recv_wr recv_wr = {0};
@@ -182,170 +166,180 @@ void RDMAContext::post_recv(struct ibv_sge *recv_sge, rdma_info_base *info) {
 
   recv_wr.wr_id = (uintptr_t)info;
   if (recv_sge != NULL) {
-      recv_wr.next = NULL;
-      recv_wr.sg_list = recv_sge;
-      recv_wr.num_sge = 1;
-  }
-  else {
-      recv_wr.next = NULL;
-      recv_wr.sg_list = NULL;
-      recv_wr.num_sge = 0;
+    recv_wr.next = NULL;
+    recv_wr.sg_list = recv_sge;
+    recv_wr.num_sge = 1;
+  } else {
+    recv_wr.next = NULL;
+    recv_wr.sg_list = NULL;
+    recv_wr.num_sge = 0;
   }
 
   int ret = ibv_post_recv(qp_, &recv_wr, &bad_recv_wr);
   if (ret) {
-      SLIME_ERROR("Failed to post recv wr : " + std::string(strerror(ret)));
+    SLIME_ERROR("Failed to post recv wr : " + std::string(strerror(ret)));
   }
 }
 
 void RDMAContext::cq_handler() {
   assert(comp_channel_ != NULL);
   while (!stop_) {
-      struct ibv_cq *ev_cq;
-      void *ev_ctx;
-      int ret = ibv_get_cq_event(comp_channel_, &ev_cq, &ev_ctx);
-      if (ret == 0) {
-          ibv_ack_cq_events(ev_cq, 1);
-          if (ibv_req_notify_cq(ev_cq, 0)) {
-              SLIME_ERROR("Failed to request CQ notification");
+    struct ibv_cq *ev_cq;
+    void *ev_ctx;
+    int ret = ibv_get_cq_event(comp_channel_, &ev_cq, &ev_ctx);
+    if (ret == 0) {
+      ibv_ack_cq_events(ev_cq, 1);
+      if (ibv_req_notify_cq(ev_cq, 0)) {
+        SLIME_ERROR("Failed to request CQ notification");
+        return;
+      }
+
+      struct ibv_wc wc[10] = {};
+      int num_completions;
+      while ((num_completions = ibv_poll_cq(cq_, 10, wc)) &&
+             num_completions > 0) {
+        for (int i = 0; i < num_completions; i++) {
+          if (wc[i].status != IBV_WC_SUCCESS) {
+            // only fake wr will use IBV_WC_SEND
+            // we use it to wake up cq thread and exit
+            if (wc[i].opcode == IBV_WC_SEND) {
+              SLIME_LOG_INFO("cq thread exit");
               return;
+            }
+            SLIME_ERROR("Failed status: " +
+                        std::string(ibv_wc_status_str(wc[i].status)));
+            return;
           }
 
-          struct ibv_wc wc[10] = {};
-          int num_completions;
-          while ((num_completions = ibv_poll_cq(cq_, 10, wc)) && num_completions > 0) {
-              for (int i = 0; i < num_completions; i++) {
-                  if (wc[i].status != IBV_WC_SUCCESS) {
-                      // only fake wr will use IBV_WC_SEND
-                      // we use it to wake up cq thread and exit
-                      if (wc[i].opcode == IBV_WC_SEND) {
-                          SLIME_LOG_INFO("cq thread exit");
-                          return;
-                      }
-                      SLIME_ERROR("Failed status: " + std::string(ibv_wc_status_str(wc[i].status)));
-                      return;
-                  }
+          if (wc[i].opcode ==
+              IBV_WC_SEND) { // read cache/allocate msg/commit msg: request sent
+            SLIME_LOG_DEBUG("read cache/allocated/commit msg request send" +
+                            std::to_string((uintptr_t)wc[i].wr_id));
+            release_send_buffer((SendBuffer *)wc[i].wr_id);
+          } else if (wc[i].opcode == IBV_WC_RECV) { // allocate msg recved.
+            rdma_info_base *ptr =
+                reinterpret_cast<rdma_info_base *>(wc[i].wr_id);
+            switch (ptr->get_wr_type()) {
+            case WrType::ALLOCATE: {
+              auto *info = reinterpret_cast<rdma_allocate_info *>(ptr);
+              info->callback();
+              delete info;
+              break;
+            }
+            case WrType::READ_COMMIT: {
+              SLIME_LOG_INFO("read cache done: Received IMM, imm_data: " +
+                             wc[i].imm_data);
+              auto *info = reinterpret_cast<rdma_read_commit_info *>(ptr);
+              info->callback(wc[i].imm_data);
+              delete info;
+              rdma_inflight_count_--;
+              cv_.notify_all();
+              break;
+            }
+            case WrType::WRITE_ACK: {
+              SLIME_LOG_INFO("write cache done: Received IMM, imm_data: " +
+                             wc[i].imm_data);
+              auto *info = reinterpret_cast<rdma_write_commit_info *>(ptr);
+              info->callback();
+              delete info;
+              rdma_inflight_count_--;
+              cv_.notify_all();
+              break;
+            }
+            }
+          } else if (wc[i].opcode == IBV_WC_RDMA_WRITE) { // write cache done
 
-                  if (wc[i].opcode ==
-                      IBV_WC_SEND) {  // read cache/allocate msg/commit msg: request sent
-                      SLIME_LOG_DEBUG("read cache/allocated/commit msg request send" + std::to_string(
-                            (uintptr_t)wc[i].wr_id));
-                      release_send_buffer((SendBuffer *)wc[i].wr_id);
-                  }
-                  else if (wc[i].opcode == IBV_WC_RECV) {  // allocate msg recved.
-                      rdma_info_base *ptr = reinterpret_cast<rdma_info_base *>(wc[i].wr_id);
-                      switch (ptr->get_wr_type()) {
-                          case WrType::ALLOCATE: {
-                              auto *info = reinterpret_cast<rdma_allocate_info *>(ptr);
-                              info->callback();
-                              delete info;
-                              break;
-                          }
-                          case WrType::READ_COMMIT: {
-                              SLIME_LOG_INFO("read cache done: Received IMM, imm_data: " + wc[i].imm_data);
-                              auto *info = reinterpret_cast<rdma_read_commit_info *>(ptr);
-                              info->callback(wc[i].imm_data);
-                              delete info;
-                              rdma_inflight_count_--;
-                              cv_.notify_all();
-                              break;
-                          }
-                          case WrType::WRITE_ACK: {
-                              SLIME_LOG_INFO("write cache done: Received IMM, imm_data: " + wc[i].imm_data);
-                              auto *info = reinterpret_cast<rdma_write_commit_info *>(ptr);
-                              info->callback();
-                              delete info;
-                              rdma_inflight_count_--;
-                              cv_.notify_all();
-                              break;
-                          }
-                      }
-                  }
-                  else if (wc[i].opcode == IBV_WC_RDMA_WRITE) {  // write cache done
+            SLIME_ASSERT(outstanding_rdma_writes_ >= 0,
+                         "Cache expected to be written but actually NOT");
 
-                      SLIME_ASSERT(outstanding_rdma_writes_ >= 0, "Cache expected to be written but actually NOT");
+            std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
 
-                      std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
+            outstanding_rdma_writes_ -= MAX_WR_BATCH;
+            std::string debug_str =
+                "RDMA_WRITE completed, wr_id: " + std::to_string(wc[i].wr_id) +
+                " outstanding_rdma_writes: " +
+                std::to_string(outstanding_rdma_writes_.load());
+            SLIME_LOG_DEBUG(debug_str);
 
-                      outstanding_rdma_writes_ -= MAX_WR_BATCH;
-                      std::string debug_str = "RDMA_WRITE completed, wr_id: " + std::to_string(wc[i].wr_id)
-                        + " outstanding_rdma_writes: " + std::to_string(outstanding_rdma_writes_.load());
-                      SLIME_LOG_DEBUG(debug_str);
-
-                      // drain the queue
-                      if (!outstanding_rdma_writes_queue_.empty()) {
-                          auto item = outstanding_rdma_writes_queue_.front();
-                          struct ibv_send_wr *wrs = item.first;
-                          struct ibv_sge *sges = item.second;
-                          ibv_send_wr *bad_wr = nullptr;
-                          SLIME_LOG_DEBUG("IBV POST SEND, wr_id: " + std::to_string(wrs[0].wr_id));
-                          int ret = ibv_post_send(qp_, &wrs[0], &bad_wr);
-                          if (ret) {
-                              SLIME_ERROR("Failed to post RDMA write " +  std::string(strerror(ret)));
-                              throw std::runtime_error("Failed to post RDMA write");
-                          }
-                          outstanding_rdma_writes_ += MAX_WR_BATCH;
-                          delete[] wrs;
-                          delete[] sges;
-                          outstanding_rdma_writes_queue_.pop_front();
-                      }
-
-                      // If this is the last WR of w_rdma, send RDMA COMMIT msg to server
-                      if (wc[i].wr_id != 0) {
-                          SendBuffer *send_buffer = get_send_buffer();
-                          FixedBufferAllocator allocator(send_buffer->buffer_,
-                                                         PROTOCOL_BUFFER_SIZE);
-                          flatbuffers::FlatBufferBuilder builder(64 << 10, &allocator);
-                          auto *info = reinterpret_cast<rdma_write_commit_info *>(wc[i].wr_id);
-
-                          auto remote_addrs_offset = builder.CreateVector(info->remote_addrs);
-
-                          auto req = CreateRemoteMetaRequest(
-                              builder, 0, 0, 0, remote_addrs_offset, OP_RDMA_WRITE_COMMIT);
-                          builder.Finish(req);
-
-                          // recv RDMA COMMIT's ACK from server
-                          post_recv(NULL, info);
-
-                          // send RDMA COMMIT msg to server
-                          struct ibv_sge sge = {0};
-                          struct ibv_send_wr wr = {0};
-                          struct ibv_send_wr *bad_wr = NULL;
-
-                          sge.addr = (uintptr_t)builder.GetBufferPointer();
-                          sge.length = builder.GetSize();
-                          sge.lkey = send_buffer->mr_->lkey;
-
-                          wr.wr_id = (uintptr_t)send_buffer;
-                          wr.opcode = IBV_WR_SEND;
-                          wr.sg_list = &sge;
-                          wr.num_sge = 1;
-                          wr.send_flags = IBV_SEND_SIGNALED;
-
-                          int ret = ibv_post_send(qp_, &wr, &bad_wr);
-                          if (ret) {
-                              SLIME_ERROR("Failed to post RDMA send " + std::string(strerror(ret)));
-                              return;
-                          }
-
-                          // release lock before callback to prevent deadlock
-                          lock.unlock();
-                      }
-                  }
-                  else {
-                      SLIME_ERROR("Unexpected opcode: " + std::to_string((int)wc[i].opcode));
-                      return;
-                  }
+            // drain the queue
+            if (!outstanding_rdma_writes_queue_.empty()) {
+              auto item = outstanding_rdma_writes_queue_.front();
+              struct ibv_send_wr *wrs = item.first;
+              struct ibv_sge *sges = item.second;
+              ibv_send_wr *bad_wr = nullptr;
+              SLIME_LOG_DEBUG("IBV POST SEND, wr_id: " +
+                              std::to_string(wrs[0].wr_id));
+              int ret = ibv_post_send(qp_, &wrs[0], &bad_wr);
+              if (ret) {
+                SLIME_ERROR("Failed to post RDMA write " +
+                            std::string(strerror(ret)));
+                throw std::runtime_error("Failed to post RDMA write");
               }
+              outstanding_rdma_writes_ += MAX_WR_BATCH;
+              delete[] wrs;
+              delete[] sges;
+              outstanding_rdma_writes_queue_.pop_front();
+            }
+
+            // If this is the last WR of w_rdma, send RDMA COMMIT msg to server
+            if (wc[i].wr_id != 0) {
+              SendBuffer *send_buffer = get_send_buffer();
+              FixedBufferAllocator allocator(send_buffer->buffer_,
+                                             PROTOCOL_BUFFER_SIZE);
+              flatbuffers::FlatBufferBuilder builder(64 << 10, &allocator);
+              auto *info =
+                  reinterpret_cast<rdma_write_commit_info *>(wc[i].wr_id);
+
+              auto remote_addrs_offset =
+                  builder.CreateVector(info->remote_addrs);
+
+              auto req = CreateRemoteMetaRequest(
+                  builder, 0, 0, 0, remote_addrs_offset, OP_RDMA_WRITE_COMMIT);
+              builder.Finish(req);
+
+              // recv RDMA COMMIT's ACK from server
+              post_recv(NULL, info);
+
+              // send RDMA COMMIT msg to server
+              struct ibv_sge sge = {0};
+              struct ibv_send_wr wr = {0};
+              struct ibv_send_wr *bad_wr = NULL;
+
+              sge.addr = (uintptr_t)builder.GetBufferPointer();
+              sge.length = builder.GetSize();
+              sge.lkey = send_buffer->mr_->lkey;
+
+              wr.wr_id = (uintptr_t)send_buffer;
+              wr.opcode = IBV_WR_SEND;
+              wr.sg_list = &sge;
+              wr.num_sge = 1;
+              wr.send_flags = IBV_SEND_SIGNALED;
+
+              int ret = ibv_post_send(qp_, &wr, &bad_wr);
+              if (ret) {
+                SLIME_ERROR("Failed to post RDMA send " +
+                            std::string(strerror(ret)));
+                return;
+              }
+
+              // release lock before callback to prevent deadlock
+              lock.unlock();
+            }
+          } else {
+            SLIME_ERROR("Unexpected opcode: " +
+                        std::to_string((int)wc[i].opcode));
+            return;
           }
+        }
       }
-      else {
-          // TODO: graceful shutdown
-          if (errno != EINTR) {
-              SLIME_LOG_WARN("Failed to get CQ event " + std::string(strerror(errno)));
-              return;
-          }
+    } else {
+      // TODO: graceful shutdown
+      if (errno != EINTR) {
+        SLIME_LOG_WARN("Failed to get CQ event " +
+                       std::string(strerror(errno)));
+        return;
       }
+    }
   }
 }
 
@@ -521,6 +515,28 @@ int32_t RDMAContext::modify_qp_to_rts() {
     throw std::runtime_error("Failed to modify QP to RTS");
     return ret;
   }
+  return 0;
+}
+
+int RDMAContext::register_mr(void *base_ptr, size_t ptr_region_size) {
+  assert(base_ptr != NULL);
+  if (local_mr_.count((uintptr_t)base_ptr)) {
+    SLIME_LOG_WARN("this memory address is already registered!");
+    ibv_dereg_mr(local_mr_[(uintptr_t)base_ptr]);
+  }
+  struct ibv_mr *mr;
+  mr = ibv_reg_mr(pd_, base_ptr, ptr_region_size,
+                  IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
+                      IBV_ACCESS_REMOTE_READ);
+  if (!mr) {
+    SLIME_ERROR("Failed to register memory regions, size: " + ptr_region_size);
+    return -1;
+  }
+  std::string info_str =
+      "register mr done for base_ptr: " + std::to_string((uintptr_t)base_ptr) +
+      ", size: " + std::to_string(ptr_region_size);
+  SLIME_LOG_INFO(info_str);
+  local_mr_[(uintptr_t)base_ptr] = mr;
   return 0;
 }
 

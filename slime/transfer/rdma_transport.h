@@ -1,16 +1,16 @@
 #pragma once
 
-
 #include <arpa/inet.h>
 #include <atomic>
-#include <condition_variable>
 #include <boost/lockfree/spsc_queue.hpp>
+#include <condition_variable>
 #include <deque>
 #include <future>
 #include <infiniband/verbs.h>
 #include <mutex>
 #include <stdexcept>
 #include <sys/socket.h>
+#include <unordered_map>
 
 #include "info_struct/config.h"
 
@@ -33,27 +33,29 @@ class RDMAContext {
 public:
   RDMAContext() {}
   ~RDMAContext() {}
+
+  int32_t connect_client(const client_config_t &config);
+
+  int32_t init_rdma_context(const std::string &dev_name, uint8_t ib_port,
+                            const std::string &link_type);
+
+  int32_t setup_rdma(const client_config_t &config);
+
+  int32_t register_mr(void *base_ptr, size_t ptr_region_size);
+
+  int32_t create_endpoint(std::string remote_server_addr) {
+    throw std::runtime_error("NotImplementedError");
+  }
+
   void openRDMADevice(std::string device, uint8_t port, int gid_index) {
     std::runtime_error("NotImplementedError");
   }
 
   void construct() { throw std::runtime_error("NotImplementedError"); }
 
-  int32_t connect_client(const client_config_t& config);
-
-  int32_t setup_rdma(const client_config_t& config);
-
-
-
-  int32_t create_endpoint(std::string remote_server_addr);
-
   int32_t register_metadata(std::string metadata_endpoint) {
     throw std::runtime_error("NotImplementedError");
   }
-
-  int32_t init_rdma_context(const std::string& dev_name,
-    uint8_t ib_port,
-    const std::string& link_type);
 
 private:
   int32_t exchange_conn_info();
@@ -61,7 +63,7 @@ private:
   // Modify Queue Pair (qp) state to Init
   int32_t modify_qp_to_init();
 
-  // Modify Queue Pair (qp) state to Ready To Receive (rtr) 
+  // Modify Queue Pair (qp) state to Ready To Receive (rtr)
   int32_t modify_qp_to_rtr();
 
   // Modify Queue Pair (qp) state to Ready to Send (rts)
@@ -76,8 +78,6 @@ private:
   void post_recv(struct ibv_sge *recv_sge, rdma_info_base *info);
 
 private:
-  ibv_mtu active_mtu_;
-
   rdma_conn_info_t local_info_;
   rdma_conn_info_t remote_info_;
 
@@ -93,6 +93,11 @@ private:
   int lid_ = -1;
   uint8_t ib_port_ = -1;
 
+  struct ibv_comp_channel *comp_channel_ = NULL;
+
+  // local active_mtu attr, after exchanging with remote, we will use the min of
+  // the two for path.mtu
+  ibv_mtu active_mtu_;
   /*
     This is MAX_RECV_WR not MAX_SEND_WR,
     because server also has the same number of buffers
@@ -108,7 +113,7 @@ private:
 
   std::atomic<int> rdma_inflight_count_{0};
   std::atomic<bool> stop_{false};
-  std::future<void> cq_future_;  // cq thread
+  std::future<void> cq_future_; // cq thread
 
   // protect rdma_inflight_count
   std::mutex mutex_;
@@ -117,7 +122,10 @@ private:
   // protect ibv_post_send, outstanding_rdma_writes_queue
   std::mutex rdma_post_send_mutex_;
   std::atomic<int> outstanding_rdma_writes_{0};
-  std::deque<std::pair<struct ibv_send_wr *, struct ibv_sge *>> outstanding_rdma_writes_queue_;
+  std::deque<std::pair<struct ibv_send_wr *, struct ibv_sge *>>
+      outstanding_rdma_writes_queue_;
+
+  std::unordered_map<uintptr_t, struct ibv_mr *> local_mr_;
 };
 
 class RDMATransport {
