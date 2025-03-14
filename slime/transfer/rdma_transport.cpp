@@ -10,12 +10,72 @@
 
 #include "info_struct/config.h"
 #include "logging.h"
+#include "transfer/allocate_response_generated.h"
 #include "transfer/ibv_helper.h"
 #include "transfer/meta_request_generated.h"
 #include "utils/utils.cpp"
 
+using flatbuffers::FlatBufferBuilder;
+
 namespace slime {
 namespace transfer {
+
+bool is_fake_remote_block(remote_block_t &block) {
+  return block.remote_addr == 0 && block.rkey == 0;
+}
+
+RDMAContext::~RDMAContext() {
+  SLIME_LOG_INFO("destroying connection");
+
+  if (!stop_ && cq_future_.valid()) {
+    SLIME_LOG_WARN("user should call close() before destroying connection, "
+                   "segmenation fault may occur");
+    // throw std::runtime_error("user should call close() before destroying
+    // connection");
+  }
+
+  SendBuffer *buffer;
+  while (send_buffers_.pop(buffer)) {
+    if (buffer)
+      delete buffer;
+  }
+
+  for (auto it = local_mr_.begin(); it != local_mr_.end(); it++) {
+    ibv_dereg_mr(it->second);
+  }
+  local_mr_.clear();
+
+  if (recv_mr_) {
+    ibv_dereg_mr(recv_mr_);
+  }
+
+  if (recv_buffer_) {
+    free(recv_buffer_);
+  }
+
+  if (qp_) {
+    struct ibv_qp_attr attr;
+    memset(&attr, 0, sizeof(attr));
+    attr.qp_state = IBV_QPS_RESET;
+    ibv_modify_qp(qp_, &attr, IBV_QP_STATE);
+  }
+  if (qp_) {
+    ibv_destroy_qp(qp_);
+  }
+  if (cq_) {
+    ibv_destroy_cq(cq_);
+  }
+
+  if (comp_channel_) {
+    ibv_destroy_comp_channel(comp_channel_);
+  }
+  if (pd_) {
+    ibv_dealloc_pd(pd_);
+  }
+  if (ib_ctx_) {
+    ibv_close_device(ib_ctx_);
+  }
+}
 
 int32_t RDMAContext::connect_client(const client_config_t &config) {
   signal(SIGSEGV, signal_handler);
@@ -286,7 +346,7 @@ void RDMAContext::cq_handler() {
               SendBuffer *send_buffer = get_send_buffer();
               FixedBufferAllocator allocator(send_buffer->buffer_,
                                              PROTOCOL_BUFFER_SIZE);
-              flatbuffers::FlatBufferBuilder builder(64 << 10, &allocator);
+              FlatBufferBuilder builder(64 << 10, &allocator);
               auto *info =
                   reinterpret_cast<rdma_write_commit_info *>(wc[i].wr_id);
 
@@ -538,6 +598,406 @@ int RDMAContext::register_mr(void *base_ptr, size_t ptr_region_size) {
   SLIME_LOG_INFO(info_str);
   local_mr_[(uintptr_t)base_ptr] = mr;
   return 0;
+}
+
+std::vector<remote_block_t> *
+RDMAContext::allocate_rdma(std::vector<std::string> &keys, int block_size) {
+  // convert allocate_rdma_async to sync version
+  std::promise<void> promise;
+  auto future = promise.get_future();
+  std::vector<remote_block_t> *ret_blocks;
+  allocate_rdma_async(
+      keys, block_size,
+      [&promise, &ret_blocks](std::vector<remote_block_t> *blocks,
+                              unsigned int error_code) {
+        ret_blocks = blocks;
+        if (error_code != FINISH) {
+          SLIME_ERROR("allocate_rdma failed, error_code: " + error_code);
+        }
+        promise.set_value();
+      });
+
+  auto status = future.wait_for(std::chrono::seconds(5)); // timeout 5s
+  if (status == std::future_status::timeout) {
+    SLIME_ERROR("allocate_rdma timeout");
+    return nullptr;
+  } else {
+    future.get();
+  }
+  return ret_blocks;
+}
+
+int32_t RDMAContext::allocate_rdma_async(
+    std::vector<std::string> &keys, int block_size,
+    std::function<void(std::vector<remote_block_t> *, unsigned int error_code)>
+        callback) {
+  /*
+  ENCODING
+  remote_meta_request req = {
+      .keys = keys,
+      .block_size = block_size,
+      .op = OP_RDMA_ALLOCATE,
+  }
+  */
+  int ret;
+
+  // post recv msg first
+  struct ibv_sge recv_sge = {0};
+  struct ibv_recv_wr *bad_recv_wr = NULL;
+  struct ibv_recv_wr recv_wr = {0};
+
+  // recv all remote addresses
+  recv_sge.addr = (uintptr_t)recv_buffer_;
+  recv_sge.length = PROTOCOL_BUFFER_SIZE;
+  recv_sge.lkey = recv_mr_->lkey;
+
+  auto *info = new rdma_allocate_info([this, callback]() {
+    const RdmaAllocateResponse *resp = GetRdmaAllocateResponse(recv_buffer_);
+    SLIME_LOG_INFO("Received allocate response, #keys: " +
+                   resp->blocks()->size());
+
+    std::vector<remote_block_t> *blocks = new std::vector<remote_block_t>();
+    blocks->reserve(resp->blocks()->size());
+    for (const auto *block : *resp->blocks()) {
+      remote_block_t remote_block = {
+          .rkey = block->rkey(),
+          .remote_addr = block->remote_addr(),
+      };
+      blocks->push_back(remote_block);
+    }
+    callback(blocks, resp->error_code());
+  });
+  // build a new callback function:
+
+  {
+    std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
+    post_recv(&recv_sge, info);
+  }
+
+  // Send RDMA request
+  SendBuffer *send_buffer = get_send_buffer();
+
+  FixedBufferAllocator allocator(send_buffer->buffer_, PROTOCOL_BUFFER_SIZE);
+  FlatBufferBuilder builder(64 << 10, &allocator);
+  auto keys_offset = builder.CreateVectorOfStrings(keys);
+
+  auto req = CreateRemoteMetaRequest(builder, keys_offset, block_size, 0, 0,
+                                     OP_RDMA_ALLOCATE);
+
+  builder.Finish(req);
+
+  struct ibv_sge sge = {0};
+  struct ibv_send_wr wr = {0};
+  struct ibv_send_wr *bad_wr = NULL;
+
+  sge.addr = (uintptr_t)builder.GetBufferPointer();
+  sge.length = builder.GetSize();
+  sge.lkey = send_buffer->mr_->lkey;
+
+  wr.wr_id = (uintptr_t)send_buffer;
+  wr.opcode = IBV_WR_SEND;
+  wr.sg_list = &sge;
+  wr.num_sge = 1;
+  wr.send_flags = IBV_SEND_SIGNALED;
+  {
+    std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
+    ret = ibv_post_send(qp_, &wr, &bad_wr);
+  }
+  if (ret) {
+    SLIME_ERROR("Failed to post RDMA send : " + std::string(strerror(ret)));
+    return -1;
+  }
+  return 0;
+}
+
+int32_t RDMAContext::write_rdma(unsigned long *p_offsets, size_t offsets_len,
+                                int block_size, remote_block_t *p_remote_blocks,
+                                size_t remote_blocks_len, void *base_ptr) {
+  return write_rdma_async(p_offsets, offsets_len, block_size, p_remote_blocks,
+                          remote_blocks_len, base_ptr, []() {});
+}
+
+int32_t RDMAContext::write_rdma_async(unsigned long *p_offsets,
+                                      size_t offsets_len, int block_size,
+                                      remote_block_t *p_remote_blocks,
+                                      size_t remote_blocks_len, void *base_ptr,
+                                      std::function<void()> callback) {
+  assert(base_ptr != NULL);
+  assert(p_remote_blocks != NULL);
+  assert(offsets_len == remote_blocks_len);
+
+  std::stringstream strm;
+  strm << "write_rdma, block_size: " << block_size
+       << ", base_ptr: " << base_ptr;
+  SLIME_LOG_INFO(strm.str());
+
+  if (!local_mr_.count((uintptr_t)base_ptr)) {
+    SLIME_ERROR("Please register memory first " +
+                std::to_string((uint64_t)base_ptr));
+    return -1;
+  }
+
+  struct ibv_mr *mr = local_mr_[(uintptr_t)base_ptr];
+
+  std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
+
+  const size_t max_wr = MAX_WR_BATCH;
+
+  struct ibv_send_wr local_wrs[max_wr];
+  struct ibv_sge local_sges[max_wr];
+
+  struct ibv_send_wr *wrs = local_wrs;
+  struct ibv_sge *sges = local_sges;
+
+  size_t num_wr = 0;
+
+  bool wr_full = false;
+
+  auto *info = new rdma_write_commit_info([callback]() { callback(); },
+                                          remote_blocks_len);
+
+  if (outstanding_rdma_writes_ + max_wr > MAX_RDMA_WRITE_WR) {
+    wr_full = true;
+    wrs = new struct ibv_send_wr[max_wr];
+    sges = new struct ibv_sge[max_wr];
+  }
+
+  size_t skipped = 0;
+  for (size_t i = 0; i < remote_blocks_len; i++) {
+    // skip duplicated remote blocks
+    if (is_fake_remote_block(p_remote_blocks[i])) {
+      skipped++;
+      continue;
+    }
+
+    sges[num_wr].addr = (uintptr_t)(base_ptr + p_offsets[i]);
+    sges[num_wr].length = block_size;
+    sges[num_wr].lkey = mr->lkey;
+
+    wrs[num_wr].opcode = IBV_WR_RDMA_WRITE;
+    if (i == remote_blocks_len - 1) {
+      // save all the remote addresses for committing keys
+      for (size_t j = 0; j < remote_blocks_len; j++) {
+        info->remote_addrs.push_back(p_remote_blocks[j].remote_addr);
+      }
+
+      wrs[num_wr].wr_id = reinterpret_cast<uint64_t>(info);
+    } else {
+      wrs[num_wr].wr_id = 0;
+    }
+
+    wrs[num_wr].sg_list = &sges[num_wr];
+    wrs[num_wr].num_sge = 1;
+    wrs[num_wr].send_flags =
+        (num_wr == max_wr - 1 || i == remote_blocks_len - 1) ? IBV_SEND_SIGNALED
+                                                             : 0;
+
+    wrs[num_wr].wr.rdma.remote_addr = p_remote_blocks[i].remote_addr;
+    wrs[num_wr].wr.rdma.rkey = p_remote_blocks[i].rkey;
+    wrs[num_wr].next = (num_wr == max_wr - 1 || i == remote_blocks_len - 1)
+                           ? nullptr
+                           : &wrs[num_wr + 1];
+    num_wr++;
+
+    if (num_wr == max_wr || i == remote_blocks_len - 1) {
+      if (!wr_full) {
+        struct ibv_send_wr *bad_wr = nullptr;
+        int ret = ibv_post_send(qp_, &wrs[0], &bad_wr);
+        if (ret) {
+          SLIME_ERROR("Failed to post RDMA write " +
+                      std::string(strerror(ret)));
+          return -1;
+        }
+        outstanding_rdma_writes_ += max_wr;
+
+        // check if next iteration will exceed the limit
+        if (outstanding_rdma_writes_ + max_wr > MAX_RDMA_WRITE_WR) {
+          wr_full = true;
+        }
+      } else {
+        // if WR queue is full, we need to put them into queue
+        std::stringstream strm;
+        strm << "WR queue full: push into temp queue, len: " << num_wr
+             << ", first wr_id: " << wrs[0].wr_id
+             << ", last wr_id: " << wrs[num_wr - 1].wr_id;
+        SLIME_LOG_DEBUG(strm.str());
+        outstanding_rdma_writes_queue_.push_back({&wrs[0], &sges[0]});
+      }
+
+      if (wr_full) {
+        wrs = new struct ibv_send_wr[max_wr];
+        sges = new struct ibv_sge[max_wr];
+      }
+      num_wr = 0; // Reset the counter for the next batch
+    }
+  }
+
+  // Check if there are remaining WRs to be sent
+  if (num_wr > 0) {
+    if (wr_full) {
+      std::stringstream strm;
+      strm << "WR queue full: push into temp queue, len: " << num_wr
+           << ", first wr_id: " << wrs[0].wr_id
+           << ", last wr_id: " << wrs[num_wr - 1].wr_id;
+      SLIME_LOG_DEBUG(strm.str());
+      outstanding_rdma_writes_queue_.push_back({&wrs[0], &sges[0]});
+    } else {
+      struct ibv_send_wr *bad_wr = nullptr;
+      int ret = ibv_post_send(qp_, &wrs[0], &bad_wr);
+      if (ret) {
+        SLIME_ERROR("Failed to post RDMA write " + std::string(strerror(ret)));
+        return -1;
+      }
+    }
+  }
+
+  if (skipped > 0) {
+    SLIME_LOG_WARN("Skipped " + std::to_string(skipped) + " duplicated keys");
+    if (skipped == remote_blocks_len) {
+      // All keys are duplicated, skip RDMA write
+      lock.unlock();
+      info->callback();
+      delete info;
+      return 0;
+    }
+  }
+  rdma_inflight_count_++;
+  SLIME_LOG_DEBUG("rdma_inflight_count: " + rdma_inflight_count_.load());
+
+  return 0;
+}
+
+int32_t RDMAContext::read_rdma(std::vector<block_t> &blocks, int block_size,
+                               void *base_ptr) {
+  return read_rdma_async(blocks, block_size, base_ptr, [](unsigned int code) {
+    if (code != FINISH) {
+      SLIME_ERROR("Failed to read cache, error code: ", code);
+    }
+  });
+}
+
+int32_t
+RDMAContext::read_rdma_async(std::vector<block_t> &blocks, int block_size,
+                             void *base_ptr,
+                             std::function<void(unsigned int)> callback) {
+  assert(base_ptr != NULL);
+
+  if (!local_mr_.count((uintptr_t)base_ptr)) {
+    SLIME_ERROR("Please register memory first");
+    return -1;
+  }
+
+  SLIME_LOG_INFO("r_rdma, block_size: ", block_size, ", base_ptr: ", base_ptr);
+  struct ibv_mr *mr = local_mr_[(uintptr_t)base_ptr];
+  assert(mr != NULL);
+
+  auto *info = new rdma_read_commit_info(
+      [callback](unsigned int code) { callback(code); });
+  {
+    std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
+    post_recv(NULL, info);
+  }
+
+  std::vector<std::string> keys;
+  std::vector<uintptr_t> remote_addrs;
+  for (auto &block : blocks) {
+    keys.push_back(block.key);
+    remote_addrs.push_back((uintptr_t)(base_ptr + block.offset));
+  }
+  /*
+  remote_meta_req = {
+      .keys = keys,
+      .block_size = block_size,
+      .rkey = mr->rkey,
+      .remote_addrs = remote_addrs,
+      .op = OP_RDMA_READ,
+  }
+  */
+  SendBuffer *send_buffer = get_send_buffer();
+  FixedBufferAllocator allocator(send_buffer->buffer_, PROTOCOL_BUFFER_SIZE);
+  FlatBufferBuilder builder(64 << 10, &allocator);
+
+  auto keys_offset = builder.CreateVectorOfStrings(keys);
+  auto remote_addrs_offset = builder.CreateVector(remote_addrs);
+  auto req = CreateRemoteMetaRequest(builder, keys_offset, block_size, mr->rkey,
+                                     remote_addrs_offset, OP_RDMA_READ);
+
+  builder.Finish(req);
+
+  // send RDMA request
+  struct ibv_sge sge = {0};
+  sge.addr = (uintptr_t)builder.GetBufferPointer();
+  sge.length = builder.GetSize();
+  sge.lkey = send_buffer->mr_->lkey;
+
+  struct ibv_send_wr wr = {0};
+  struct ibv_send_wr *bad_wr = NULL;
+
+  wr.wr_id = (uintptr_t)send_buffer;
+  wr.opcode = IBV_WR_SEND;
+  wr.sg_list = &sge;
+  wr.num_sge = 1;
+  wr.send_flags = IBV_SEND_SIGNALED;
+
+  int ret;
+  {
+    std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
+    ret = ibv_post_send(qp_, &wr, &bad_wr);
+  }
+
+  if (ret) {
+    SLIME_ERROR("Failed to post RDMA send: ", strerror(ret));
+    return -1;
+  }
+  rdma_inflight_count_++;
+
+  return 0;
+}
+
+int32_t RDMAContext::sync_rdma() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  bool ret = cv_.wait_for(lock, std::chrono::seconds(10),
+                          [this] { return rdma_inflight_count_ == 0; });
+
+  if (!ret) {
+    SLIME_ERROR("timeout to sync RDMA");
+    return -1;
+  }
+  return 0;
+}
+
+void RDMAContext::close_conn() {
+  if (!stop_ && cq_future_.valid()) {
+    stop_ = true;
+
+    // create fake wr to wake up cq thread
+    ibv_req_notify_cq(cq_, 0);
+    struct ibv_sge sge;
+    memset(&sge, 0, sizeof(sge));
+    sge.addr = (uintptr_t)this;
+    sge.length = sizeof(*this);
+    sge.lkey = 0;
+
+    struct ibv_send_wr send_wr;
+    memset(&send_wr, 0, sizeof(send_wr));
+    send_wr.wr_id = (uintptr_t)this;
+    send_wr.sg_list = &sge;
+    send_wr.num_sge = 1;
+    send_wr.opcode = IBV_WR_SEND;
+    send_wr.send_flags = IBV_SEND_SIGNALED;
+
+    struct ibv_send_wr *bad_send_wr;
+    {
+      std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
+      ibv_post_send(qp_, &send_wr, &bad_send_wr);
+    }
+    // wait thread done
+    cq_future_.get();
+  }
+
+  if (sock_) {
+    close(sock_);
+  }
 }
 
 } // namespace transfer

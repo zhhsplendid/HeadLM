@@ -142,4 +142,18 @@ class FixedBufferAllocator : public flatbuffers::Allocator {
      size_t offset_;
  };
 
+// remote_block_t is used to to talk to PYTHON layer. not used in RDMA/TCP layer.
+typedef struct {
+    uint32_t rkey;
+    uintptr_t remote_addr;
+} remote_block_t;
+
+// block_t is used to to talk to PYTHON layer. not used in RDMA/TCP layer.
+typedef struct {
+    std::string key;
+    unsigned long offset;
+} block_t;
+
+
+
 #endif

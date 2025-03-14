@@ -13,9 +13,13 @@
 #include <unordered_map>
 
 #include "info_struct/config.h"
+#include "transfer/allocate_response_generated.h"
 
 namespace slime {
 namespace transfer {
+
+const RemoteBlock FAKE_REMOTE_BLOCK = RemoteBlock(0, 0);
+bool is_fake_remote_block(remote_block_t &block);
 
 // RDMA send buffer
 // because write_cache will be invoked asynchronously,
@@ -31,8 +35,11 @@ struct SendBuffer {
 
 class RDMAContext {
 public:
-  RDMAContext() {}
-  ~RDMAContext() {}
+  RDMAContext() = default;
+
+  RDMAContext(const RDMAContext &) = delete;
+
+  ~RDMAContext();
 
   int32_t connect_client(const client_config_t &config);
 
@@ -42,6 +49,30 @@ public:
   int32_t setup_rdma(const client_config_t &config);
 
   int32_t register_mr(void *base_ptr, size_t ptr_region_size);
+
+  std::vector<remote_block_t> *allocate_rdma(std::vector<std::string> &keys,
+                                             int block_size);
+
+  int32_t allocate_rdma_async(std::vector<std::string> &keys, int block_size,
+                              std::function<void(std::vector<remote_block_t> *,
+                                                 unsigned int error_code)>
+                                  callback);
+  int32_t write_rdma(unsigned long *p_offsets, size_t offsets_len,
+                     int block_size, remote_block_t *p_remote_blocks,
+                     size_t remote_blocks_len, void *base_ptr);
+  int32_t write_rdma_async(unsigned long *p_offsets, size_t offsets_len,
+                           int block_size, remote_block_t *p_remote_blocks,
+                           size_t remote_blocks_len, void *base_ptr,
+                           std::function<void()> callback);
+  int32_t read_rdma(std::vector<block_t> &blocks, int block_size,
+                    void *base_ptr);
+  int32_t read_rdma_async(std::vector<block_t> &blocks, int block_size,
+                          void *base_ptr,
+                          std::function<void(unsigned int)> callback);
+
+  int32_t sync_rdma();
+
+  void close_conn();
 
   int32_t create_endpoint(std::string remote_server_addr) {
     throw std::runtime_error("NotImplementedError");

@@ -24,43 +24,62 @@ inline int get_log_level() {
   return !lvl.empty() ? atoi(lvl.c_str()) : 0;
 }
 
-#define SLIME_ASSERT(Expr, Msg)                                                \
+
+#define STREAM_VAR_ARGS1(a)         << a
+#define STREAM_VAR_ARGS2(a,b)       << a << b
+#define STREAM_VAR_ARGS3(a,b,c)     << a << b << c
+#define STREAM_VAR_ARGS4(a,b,c,d)   << a << b << c << d
+#define STREAM_VAR_ARGS5(a,b,c,d,e)   << a << b << c << d << e
+
+#define GET_MACRO(_1, _2, _3, _4, _5, NAME, ...) NAME
+
+#define STREAM_VAR_ARGS(...) GET_MACRO(__VA_ARGS__, STREAM_VAR_ARGS5, STREAM_VAR_ARGS4, STREAM_VAR_ARGS3, STREAM_VAR_ARGS2, STREAM_VAR_ARGS1)(__VA_ARGS__)
+
+#define SLIME_ASSERT(Expr, Msg, ...)                                           \
   {                                                                            \
     if (!(Expr)) {                                                             \
       std::cerr << "\033[1;91m"                                                \
                 << "[Assertion Failed]"                                        \
                 << "\033[m " << __FILE__ << ": " << __FUNCTION__ << ": Line"   \
-                << __LINE__ << ", Expected :" << #Expr << std::endl;           \
+                << __LINE__ << ", Expected :" << #Expr                         \
+                << Msg __VA_OPT__(STREAM_VAR_ARGS(__VA_ARGS__))         \
+                << std::endl;                                                  \
       abort();                                                                 \
     }                                                                          \
   }
 
-#define SLIME_ASSERT_EQ(A, B, Msg, ...) SLIME_ASSERT((A) == (B), Msg)
-#define SLIME_ASSERT_NE(A, B, Msg, ...) SLIME_ASSERT((A) == (B), Msg)
+#define SLIME_ASSERT_EQ(A, B, Msg, ...)                                        \
+  SLIME_ASSERT((A) == (B), Msg, __VA_ARGS__)
+#define SLIME_ASSERT_NE(A, B, Msg, ...)                                        \
+  SLIME_ASSERT((A) == (B), Msg, __VA_ARGS__)
 
-#define SLIME_ABORT(Msg)                                                       \
+#define SLIME_ABORT(Msg, ...)                                                  \
   {                                                                            \
     std::cerr << ": \033[1;91m"                                                \
               << "[Fatal]"                                                     \
               << "\033[m " << __FILE__ << ": " << __FUNCTION__ << ": Line"     \
-              << __LINE__ << ": " << Msg << std::endl;                         \
+              << __LINE__ << ": "                                              \
+              << Msg  __VA_OPT__(STREAM_VAR_ARGS(__VA_ARGS__))                 \
+              << std::endl; \
     abort();                                                                   \
   }
 
-#define SLIME_ERROR(Msg) SLIME_ABORT(Msg)
+#define SLIME_ERROR(Msg, ...) SLIME_ABORT(Msg, __VA_ARGS__)
 
-#define SLIME_LOG_LEVEL(Msg, MsgType, Level)                                   \
+#define SLIME_LOG_LEVEL(MsgType, Level, ...)                                   \
   {                                                                            \
     if (get_log_level() >= Level) {                                            \
       std::cerr << ": \033[1;91m"                                              \
                 << "[" << MsgType << "]"                                       \
                 << "\033[m " << __FILE__ << ": " << __FUNCTION__ << ": Line"   \
-                << __LINE__ << ": " << Msg << std::endl;                       \
+                << __LINE__                                                    \
+                << ": " __VA_OPT__(STREAM_VAR_ARGS(__VA_ARGS__))            \
+                << std::endl;                                                  \
     }                                                                          \
   }
 
-#define SLIME_LOG_INFO(Msg) SLIME_LOG_LEVEL(Msg, "Info", 1)
+#define SLIME_LOG_INFO(...) SLIME_LOG_LEVEL("Info", 1, __VA_ARGS__)
 
-#define SLIME_LOG_DEBUG(Msg) SLIME_LOG_LEVEL(Msg, "Debug", 2)
+#define SLIME_LOG_DEBUG(...) SLIME_LOG_LEVEL("Debug", 2, __VA_ARGS__)
 
-#define SLIME_LOG_WARN(Msg) SLIME_LOG_LEVEL(Msg, "Warn", 3)
+#define SLIME_LOG_WARN(...) SLIME_LOG_LEVEL("Warn", 3, __VA_ARGS__)
