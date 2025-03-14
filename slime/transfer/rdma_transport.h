@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <sys/socket.h>
 
-#include "transfer/config.h"
+#include "info_struct/config.h"
 
 namespace slime {
 namespace transfer {
@@ -20,7 +20,9 @@ public:
 
   void construct() { throw std::runtime_error("NotImplementedError"); }
 
-  int32_t connect_client(client_config_t config);
+  int32_t connect_client(const client_config_t& config);
+
+  //int32_t setup_rdma(const client_config_t& config);
 
   // Modify Queue Pair (qp) state to Init
   int32_t modify_qp_to_init();
@@ -31,8 +33,9 @@ public:
   // Modify Queue Pair (qp) state to Ready to Send (rts)
   int32_t modify_qp_to_rts();
 
-  int32_t init_rdma_context(std::string dev_name, uint8_t ib_port,
-                            std::string link_type);
+  int32_t init_rdma_context(const std::string& dev_name,
+                            uint8_t ib_port,
+                            const std::string& link_type);
 
   int32_t create_endpoint(std::string remote_server_addr);
 

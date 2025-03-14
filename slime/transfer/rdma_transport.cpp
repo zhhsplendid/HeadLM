@@ -1,7 +1,7 @@
 #include "rdma_transport.h"
 #include "ibv_helper.h"
 #include "logging.h"
-#include "utils.h"
+#include "utils/utils.h"
 
 #include <arpa/inet.h>
 #include <bits/socket.h>
@@ -32,7 +32,7 @@ int32_t RDMAContext::create_endpoint(std::string remote_server_addr) {
   throw std::runtime_error("NotImplementedError");
 }
 
-int32_t RDMAContext::connect_client(client_config_t config) {
+int32_t RDMAContext::connect_client(const client_config_t& config) {
     signal(SIGSEGV, signal_handler);
     signal(SIGABRT, signal_handler);
     signal(SIGBUS, signal_handler);
@@ -62,8 +62,61 @@ int32_t RDMAContext::connect_client(client_config_t config) {
     return 0;
 }
 
-int32_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port,
-                                       std::string link_type) {
+/*
+int RDMAContext::setup_rdma(const client_config_t& config) {
+  if (init_rdma_context(config.dev_name, config.ib_port, config.link_type) < 0) {
+      SLIME_ERROR("Failed to initialize RDMA resources");
+      return -1;
+  }
+
+  // Exchange RDMA connection information with the server
+  if (exchange_conn_info()) {
+      return -1;
+  }
+
+  print_rdma_conn_info(&remote_info_, true);
+
+  // Modify QP to RTR state
+  if (modify_qp_to_rtr()) {
+      SLIME_ERROR("Failed to modify QP to RTR");
+      return -1;
+  }
+
+  if (modify_qp_to_rts()) {
+      SLIME_ERROR("Failed to modify QP to RTS");
+      return -1;
+  }
+
+  if (posix_memalign(&recv_buffer_, 4096, PROTOCOL_BUFFER_SIZE) != 0) {
+      SLIME_ERROR("Failed to allocate recv buffer");
+      return -1;
+  }
+  recv_mr_ = ibv_reg_mr(pd_, recv_buffer_, PROTOCOL_BUFFER_SIZE,
+                        IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+  if (!recv_mr_) {
+      SLIME_ERROR("Failed to register recv MR");
+      return -1;
+  }
+
+  /*
+  This is MAX_RECV_WR not MAX_SEND_WR,
+  because server also has the same number of buffers
+  //
+  for (int i = 0; i < MAX_RECV_WR; i++) {
+      send_buffers_.push(new SendBuffer(pd_, PROTOCOL_BUFFER_SIZE));
+  }
+
+  rdma_inflight_count_ = 0;
+  stop_ = false;
+
+  cq_future_ = std::async(std::launch::async, [this]() { cq_handler(); });
+  return 0;
+}
+*/
+
+int32_t RDMAContext::init_rdma_context(const std::string& dev_name,
+                                       uint8_t ib_port,
+                                       const std::string& link_type) {
   struct ibv_device **dev_list;
   struct ibv_device *ib_dev;
 
@@ -179,7 +232,7 @@ int32_t RDMAContext::modify_qp_to_rtr() {
           + std::to_string(1 << ((uint32_t)remote_info_.mtu + 7))
           + " , local MTU: {} is not the same, update to minimal MTU"
           + std::to_string(1 << ((uint32_t)active_mtu_ + 7));
-       SLIME_WARN(warn_str);
+       SLIME_LOG_WARN(warn_str);
     }
     attr.path_mtu = (enum ibv_mtu) std::min((uint32_t)active_mtu_, (uint32_t)remote_info_.mtu);
 
