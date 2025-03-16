@@ -13,6 +13,8 @@ add_library(
 )
 target_link_libraries(slime PUBLIC ibverbs)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Python Wrapper
 find_package(pybind11 REQUIRED)
 pybind11_add_module(

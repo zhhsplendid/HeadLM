@@ -22,8 +22,11 @@ public:
   }
   int64_t init_rdma_context(std::string dev_name, uint8_t ib_port,
                             std::string link_type);
-  int64_t create_endpoint(std::string remote_server_addr);
-  int64_t register_metadata(std::string metadata_endpoint) {
+  int64_t registerMemoryRegion(int64_t addr, size_t length);
+  void cq_poll_handle();
+  int64_t rdma_exchange(uint32_t psn);
+
+  int32_t register_metadata(std::string metadata_endpoint) {
     throw std::runtime_error("NotImplementedError");
   }
 

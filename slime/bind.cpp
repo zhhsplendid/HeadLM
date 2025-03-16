@@ -10,5 +10,7 @@ PYBIND11_MODULE(_slime_c, m) {
   py::class_<slime::RDMAContext>(m, "rdma_context")
       .def(py::init<>())
       .def("init_rdma_context", &slime::RDMAContext::init_rdma_context)
-      .def("register_metadata", &slime::RDMAContext::register_metadata);
+      .def("register_memory_region", &slime::RDMAContext::registerMemoryRegion)
+      .def("cq_poll_handle", &slime::RDMAContext::cq_poll_handle)
+      .def("rdma_exchange", &slime::RDMAContext::rdma_exchange);
 }
