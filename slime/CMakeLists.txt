@@ -6,7 +6,10 @@ include_directories(${PROJECT_SOURCE_DIR})
 
 enable_testing()
 
+
 add_subdirectory(thirdparty/flatbuffers)
+add_subdirectory(thirdparty/libuv)
+
 add_subdirectory(utils)
 add_subdirectory(info_struct)
 add_subdirectory(transfer)

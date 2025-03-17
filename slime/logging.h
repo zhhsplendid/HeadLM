@@ -30,10 +30,21 @@ inline int get_log_level() {
 #define STREAM_VAR_ARGS3(a,b,c)     << a << b << c
 #define STREAM_VAR_ARGS4(a,b,c,d)   << a << b << c << d
 #define STREAM_VAR_ARGS5(a,b,c,d,e)   << a << b << c << d << e
+#define STREAM_VAR_ARGS6(a,b,c,d,e,f)   << a << b << c << d << e << f
+#define STREAM_VAR_ARGS7(a,b,c,d,e,f,g)   << a << b << c << d << e << f << g
+#define STREAM_VAR_ARGS8(a,b,c,d,e,f,g,h)   << a << b << c << d << e << f << g << h
 
-#define GET_MACRO(_1, _2, _3, _4, _5, NAME, ...) NAME
+#define GET_MACRO(_1, _2, _3, _4, _5, _6, _7, _8, NAME, ...) NAME
 
-#define STREAM_VAR_ARGS(...) GET_MACRO(__VA_ARGS__, STREAM_VAR_ARGS5, STREAM_VAR_ARGS4, STREAM_VAR_ARGS3, STREAM_VAR_ARGS2, STREAM_VAR_ARGS1)(__VA_ARGS__)
+#define STREAM_VAR_ARGS(...) GET_MACRO(__VA_ARGS__, \
+  STREAM_VAR_ARGS8, \
+  STREAM_VAR_ARGS7, \
+  STREAM_VAR_ARGS6, \
+  STREAM_VAR_ARGS5, \
+  STREAM_VAR_ARGS4, \
+  STREAM_VAR_ARGS3, \
+  STREAM_VAR_ARGS2, \
+  STREAM_VAR_ARGS1)(__VA_ARGS__)
 
 #define SLIME_ASSERT(Expr, Msg, ...)                                           \
   {                                                                            \

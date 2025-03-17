@@ -71,7 +71,7 @@ typedef struct ServerConfig {
 
 typedef struct ClientConfig {
     int service_port;
-    std::string log_level;
+    std::string log_level; // TODO: useless and delete
     std::string dev_name;
     std::string host_addr;
     int ib_port;
