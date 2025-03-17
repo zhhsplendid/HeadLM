@@ -1,7 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <infiniband/verbs.h>
+#include <iostream>
 #include <string>
+#include <tuple>
 
 namespace slime {
 
@@ -11,4 +14,31 @@ typedef struct TransferConfig {
 } transfer_config_t;
 
 transfer_config_t loadGlobalConfig();
+
+typedef struct RDMAInfo {
+  uint32_t qpn;
+  union ibv_gid gid;
+  int64_t gidx;
+  uint16_t lid;
+  uint64_t psn;
+  uint64_t mtu;
+  RDMAInfo() {}
+  RDMAInfo(uint32_t qpn, uint64_t gid_subnet_prefix, uint64_t gid_interface_id,
+           int64_t gidx, uint16_t lid, uint64_t psn, uint64_t mtu)
+      : qpn(qpn), gidx(gidx), lid(lid), psn(psn), mtu(mtu) {
+    std::cout << gidx << std::endl;
+    gid.global = {gid_subnet_prefix, gid_interface_id};
+  }
+  RDMAInfo(uint32_t qpn, union ibv_gid gid, int64_t gidx, uint16_t lid,
+           uint64_t psn, uint64_t mtu)
+      : RDMAInfo(qpn, gid.global.interface_id, gid.global.subnet_prefix, gidx,
+                 lid, psn, mtu) {}
+  std::tuple<uint64_t, uint64_t> get_gid() {
+    return {gid.global.subnet_prefix, gid.global.interface_id};
+  }
+  void set_gid(std::tuple<uint64_t, uint64_t> remote_gid) {
+    gid.global = {std::get<0>(remote_gid), std::get<1>(remote_gid)};
+  }
+} rdma_info_t;
+
 }; // namespace slime
