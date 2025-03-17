@@ -15,29 +15,36 @@ recv_socket.bind("tcp://localhost:2121")
 x = torch.ones([5, 5], device="cuda")
 
 ctx = _slime_c.rdma_context()
+
+# Init RDMA
 ctx.init_rdma_context("mlx5_bond_0", 1, "Ethernet")
-print(f"ptr: {x.data_ptr()}")
-ctx.register_memory_region(x.data_ptr(), x.numel() * x.itemsize)
 
-ctx.rdma_exchange()
+mr_key = "target_tensor"
+# Init Memory Region
+ctx.register_memory_region(mr_key, x.data_ptr(), x.numel() * x.itemsize)
 
-local_rkey = ctx.get_r_key(0)
-
+# memory key
+local_rkey = ctx.get_r_key(mr_key)
+# rdma info
 local_rdma_info = ctx.get_local_rdma_info()
-print(f"send pyobj gidx: {local_rdma_info.gidx}")
-send_socket.send_pyobj([local_rdma_info.get_gid(), local_rdma_info.gidx, local_rdma_info.lid, local_rdma_info.qpn, local_rdma_info.psn, local_rdma_info.mtu, x.data_ptr(), local_rkey])
 
+# exchange RDMA Info
+send_socket.send_pyobj([
+    local_rdma_info.get_gid(),
+    local_rdma_info.gidx,
+    local_rdma_info.lid,
+    local_rdma_info.qpn, 
+    local_rdma_info.psn, 
+    local_rdma_info.mtu, 
+    x.data_ptr(), 
+    local_rkey
+])
 gid, gidx, lid, qpn, psn, mtu, data_ptr, rkey = recv_socket.recv_pyobj()
 remote_rdma_info = _slime_c.rdma_info(
     qpn, gid[0], gid[1], gidx, lid, psn, mtu
 )
-remote_rdma_info.gidx = 3
-print(remote_rdma_info)
-
-time.sleep(1)
+remote_rdma_info.log()
 
 ctx.modify_qp_to_rtsr(remote_rdma_info)
 
-# ctx.r_rdma_async(1, data_ptr, x.data_ptr(), 12, rkey, 1)
-# ctx.cq_poll_handle()
 time.sleep(10)

@@ -2,7 +2,10 @@
 
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
+
+#include "rdma_transport.h"
 
 namespace slime {
 
@@ -13,16 +16,13 @@ class TransferEngine {
 public:
   TransferEngine() {}
 
-  void initialize(std::string metadata_endpoint, std::string local_server);
+  int64_t registerRDMAContext(std::string key, RDMAContext ctx) {
+    transport_links_[key] = ctx;
+    return 0;
+  }
 
-  mr_hash_key_t registerLocalMemory(void *data_ptr, uint64_t length);
-
-  trans_status_t transferBatch(std::string segment_id,
-                               std::vector<mr_hash_key_t> targetKey,
-                               std::vector<int64_t> targetOffset,
-                               std::vector<mr_hash_key_t> sourceKey,
-                               std::vector<int64_t> sourceOffset,
-                               uint64_t length);
+private:
+  std::unordered_map<std::string, RDMAContext> transport_links_ = {};
 };
 
 } // namespace slime
