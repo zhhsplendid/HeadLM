@@ -24,6 +24,28 @@ bool is_fake_remote_block(remote_block_t &block) {
   return block.remote_addr == 0 && block.rkey == 0;
 }
 
+SendBuffer::SendBuffer(struct ibv_pd *pd, size_t size) {
+  if (posix_memalign(&buffer_, 4096, PROTOCOL_BUFFER_SIZE) != 0) {
+      assert(false);
+  }
+  mr_ = ibv_reg_mr(pd, buffer_, PROTOCOL_BUFFER_SIZE, IBV_ACCESS_LOCAL_WRITE);
+  assert(mr_ != NULL);
+}
+
+SendBuffer::~SendBuffer() {
+  SLIME_LOG_DEBUG("destroying send buffer");
+  assert(buffer_ != NULL);
+  assert(mr_ != NULL);
+  if (mr_) {
+      ibv_dereg_mr(mr_);
+      mr_ = nullptr;
+  }
+  if (buffer_) {
+      free(buffer_);
+      buffer_ = nullptr;
+  }
+}
+
 RDMAContext::~RDMAContext() {
   SLIME_LOG_INFO("destroying connection");
 
@@ -288,7 +310,7 @@ void RDMAContext::cq_handler() {
             }
             case WrType::READ_COMMIT: {
               SLIME_LOG_INFO("read cache done: Received IMM, imm_data: " +
-                             wc[i].imm_data);
+                             std::to_string(wc[i].imm_data));
               auto *info = reinterpret_cast<rdma_read_commit_info *>(ptr);
               info->callback(wc[i].imm_data);
               delete info;
@@ -298,7 +320,7 @@ void RDMAContext::cq_handler() {
             }
             case WrType::WRITE_ACK: {
               SLIME_LOG_INFO("write cache done: Received IMM, imm_data: " +
-                             wc[i].imm_data);
+                             std::to_string(wc[i].imm_data));
               auto *info = reinterpret_cast<rdma_write_commit_info *>(ptr);
               info->callback();
               delete info;
@@ -429,8 +451,7 @@ int32_t RDMAContext::init_rdma_context(const std::string &dev_name,
   if (!ib_ctx_) {
     SLIME_LOG_INFO(
         "Can't find or failed to open the specified device, try to open "
-        "the default device {}"
-        << (char *)ibv_get_device_name(dev_list[0]));
+        "the default device " + std::string(ibv_get_device_name(dev_list[0])));
     ib_ctx_ = ibv_open_device(dev_list[0]);
     if (!ib_ctx_) {
       SLIME_ABORT("Failed to open the default device");
@@ -442,7 +463,7 @@ int32_t RDMAContext::init_rdma_context(const std::string &dev_name,
   ib_port_ = ib_port;
 
   if (ibv_query_port(ib_ctx_, ib_port, &port_attr)) {
-    SLIME_ABORT("Unable to query port {} attributes\n" << ib_port);
+    SLIME_ABORT("Unable to query port {} attributes\n", ib_port);
     return -1;
   }
   if ((port_attr.link_layer == IBV_LINK_LAYER_INFINIBAND &&
@@ -589,7 +610,7 @@ int RDMAContext::register_mr(void *base_ptr, size_t ptr_region_size) {
                   IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE |
                       IBV_ACCESS_REMOTE_READ);
   if (!mr) {
-    SLIME_ERROR("Failed to register memory regions, size: " + ptr_region_size);
+    SLIME_ERROR("Failed to register memory regions, size: ", ptr_region_size);
     return -1;
   }
   std::string info_str =
@@ -612,7 +633,7 @@ RDMAContext::allocate_rdma(std::vector<std::string> &keys, int block_size) {
                               unsigned int error_code) {
         ret_blocks = blocks;
         if (error_code != FINISH) {
-          SLIME_ERROR("allocate_rdma failed, error_code: " + error_code);
+          SLIME_ERROR("allocate_rdma failed, error_code: ", error_code);
         }
         promise.set_value();
       });
@@ -654,7 +675,7 @@ int32_t RDMAContext::allocate_rdma_async(
   auto *info = new rdma_allocate_info([this, callback]() {
     const RdmaAllocateResponse *resp = GetRdmaAllocateResponse(recv_buffer_);
     SLIME_LOG_INFO("Received allocate response, #keys: " +
-                   resp->blocks()->size());
+                   std::to_string(resp->blocks()->size()));
 
     std::vector<remote_block_t> *blocks = new std::vector<remote_block_t>();
     blocks->reserve(resp->blocks()->size());
@@ -862,7 +883,7 @@ int32_t RDMAContext::write_rdma_async(unsigned long *p_offsets,
     }
   }
   rdma_inflight_count_++;
-  SLIME_LOG_DEBUG("rdma_inflight_count: " + rdma_inflight_count_.load());
+  SLIME_LOG_DEBUG("rdma_inflight_count: " + std::to_string(rdma_inflight_count_.load()));
 
   return 0;
 }

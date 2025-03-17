@@ -32,6 +32,3 @@ void FixedBufferAllocator::deallocate(uint8_t*, size_t) {
     // no-op
 }
 
-bool is_fake_remote_block(remote_block_t& block) {
-    return block.remote_addr == 0 && block.rkey == 0;
-}

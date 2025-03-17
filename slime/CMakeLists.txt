@@ -4,6 +4,8 @@ project(slime C CXX CUDA)
 
 include_directories(${PROJECT_SOURCE_DIR})
 
+enable_testing()
+
 add_subdirectory(thirdparty/flatbuffers)
 add_subdirectory(utils)
 add_subdirectory(info_struct)
@@ -19,6 +21,8 @@ target_link_libraries(slime PUBLIC ibverbs)
 target_link_libraries(slime PUBLIC info_struct)
 target_link_libraries(slime PUBLIC rdma_transfer)
 target_link_libraries(slime PUBLIC utils)
+
+add_subdirectory(tests)
 
 # Python Wrapper
 find_package(pybind11 REQUIRED)
