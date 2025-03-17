@@ -1,0 +1,45 @@
+import time
+
+import zmq
+
+import torch
+import _slime_c
+
+zmq_ctx = zmq.Context(2)
+send_socket = zmq_ctx.socket(zmq.PUSH)
+send_socket.connect("tcp://localhost:2121")
+recv_socket = zmq_ctx.socket(zmq.PULL)
+recv_socket.bind("tcp://localhost:1212")
+
+x = torch.zeros([5, 5], device="cuda")
+
+ctx = _slime_c.rdma_context()
+ctx.init_rdma_context("mlx5_bond_1", 1, "Ethernet")
+print(f"ptr: {x.data_ptr()}")
+ctx.register_memory_region(x.data_ptr(), x.numel() * x.itemsize)
+
+ctx.rdma_exchange()
+
+gid, gidx, lid, qpn, psn, mtu, data_ptr, rkey = recv_socket.recv_pyobj()
+remote_rdma_info = _slime_c.rdma_info(
+    qpn, gid[0], gid[1], gidx, lid, psn, mtu
+)
+print(f"recv pyobj gidx psn: {gidx} {psn}")
+remote_rdma_info.gidx = gidx
+print(remote_rdma_info)
+
+local_rkey = ctx.get_r_key(0)
+local_rdma_info = ctx.get_local_rdma_info()
+send_socket.send_pyobj([local_rdma_info.get_gid(), local_rdma_info.gidx, local_rdma_info.lid, local_rdma_info.qpn, local_rdma_info.psn, local_rdma_info.mtu, x.data_ptr(), local_rkey])
+
+time.sleep(1)
+
+ctx.modify_qp_to_rtsr(remote_rdma_info)
+
+ctx.r_rdma_async(1, data_ptr, x.data_ptr(), 12, rkey, 1)
+ctx.cq_poll_handle()
+print(x)
+
+
+
+
