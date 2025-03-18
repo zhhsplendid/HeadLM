@@ -87,7 +87,8 @@ void RDMAContext::cq_poll_handle() {
         if (wc.opcode == IBV_WC_RECV) {
           wr_info_base *ptr = reinterpret_cast<wr_info_base *>(wc.wr_id);
           if (ptr->get_wr_type() == WrType::RDMA_READ_ACK) {
-            SLIME_LOG_DEBUG("read cache done: Received IMM, imm_data: ", wc.imm_data);
+            SLIME_LOG_DEBUG("read cache done: Received IMM, imm_data: ",
+                            wc.imm_data);
             auto *info = reinterpret_cast<read_info *>(ptr);
             info->callback(wc.imm_data);
             delete info;
@@ -101,7 +102,6 @@ void RDMAContext::cq_poll_handle() {
   }
 }
 
-
 void RDMAContext::post_recv_ack(wr_info_base *info) {
   struct ibv_recv_wr recv_wr = {0};
   struct ibv_recv_wr *bad_recv_wr = NULL;
@@ -114,16 +114,17 @@ void RDMAContext::post_recv_ack(wr_info_base *info) {
 
   int ret = ibv_post_recv(qp_, &recv_wr, &bad_recv_wr);
   if (ret) {
-      SLIME_ABORT("Failed to post recv wr " + std::string(strerror(ret)));
+    SLIME_ABORT("Failed to post recv wr " + std::string(strerror(ret)));
   }
 }
 
-int64_t RDMAContext::r_rdma_async(uintptr_t target_addr,
-                                  uintptr_t source_addr, uint64_t length,
-                                  std::string mr_key, int64_t remote_rkey, 
+int64_t RDMAContext::r_rdma_async(uintptr_t target_addr, uintptr_t source_addr,
+                                  uint64_t length, std::string mr_key,
+                                  int64_t remote_rkey,
                                   std::function<void(unsigned int)> callback) {
   /* TODO: add a callback for Async await */
-  auto *call_back_info = new read_info([callback](unsigned int code) { callback(code); });
+  auto *call_back_info =
+      new read_info([callback](unsigned int code) { callback(code); });
   post_recv_ack(call_back_info);
 
   int ret;

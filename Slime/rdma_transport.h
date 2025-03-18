@@ -4,12 +4,12 @@
 
 #include <cstdint>
 #include <functional>
-#include <mutex>
+#include <future>
 #include <infiniband/verbs.h>
+#include <mutex>
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
-#include <future>
 
 namespace slime {
 
@@ -35,10 +35,10 @@ public:
 
   /* Async RDMA Read */
   /* TODO: Add callback */
-  int64_t r_rdma_async(uintptr_t target_addr,
-                       uintptr_t source_addr, uint64_t length,
-                       std::string mr_key, int64_t remote_rkey, std::function<void(unsigned int)> callback);
-  
+  int64_t r_rdma_async(uintptr_t target_addr, uintptr_t source_addr,
+                       uint64_t length, std::string mr_key, int64_t remote_rkey,
+                       std::function<void(unsigned int)> callback);
+
   int64_t batch_r_rdma_async() {
     throw std::runtime_error("NotImplementedError");
   }
