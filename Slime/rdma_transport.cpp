@@ -92,7 +92,8 @@ void RDMAContext::cq_poll_handle() {
 
 int64_t RDMAContext::r_rdma_async(uint64_t info, uintptr_t target_addr,
                                   uintptr_t source_addr, uint64_t length,
-                                  std::string mr_key, int64_t remote_rkey) {
+                                  std::string mr_key, int64_t remote_rkey, 
+                                  std::function<void(unsigned int)> callback) {
   /* TODO: add a callback for Async await */
   int ret;
 
