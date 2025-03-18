@@ -16,7 +16,7 @@ ctx.init_rdma_context("mlx5_bond_0", 1, "Ethernet")
 
 # Init Memory Region
 mr_key = "local_kv"
-local_memory = torch.ones([1024, 1024, 1024, 16], device="cuda", dtype=torch.int8)
+local_memory = torch.ones([1024, 1024, 1024, 16], dtype=torch.int8)
 ctx.register_memory_region(
     mr_key,
     local_memory.data_ptr(),
@@ -64,7 +64,6 @@ psum = requests.post(
         "remote_addr": local_memory.data_ptr()
     }
 )
-
 print(psum.json())
 
 psum = requests.post(
@@ -77,3 +76,4 @@ psum = requests.post(
         "remote_addr": local_memory.data_ptr()
     }
 )
+print(psum.json())

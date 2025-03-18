@@ -14,7 +14,7 @@ class RDMAContext:
         self._rdma_context_c = _slime_c.rdma_context()
         self.init_rdma_context(dev_name, ib_port, link_type)
         # 1G Memory Pool
-        self.memory_pool = torch.zeros([1024, 1024, 1024, 16], dtype=torch.int8, device="cuda")
+        self.memory_pool = torch.zeros([1024, 1024, 1024, 16], dtype=torch.int8)
         self.mr_key = "remote_kv"
         self._rdma_context_c.register_memory_region(
             self.mr_key,

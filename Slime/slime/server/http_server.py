@@ -92,7 +92,7 @@ def launch_server(server_args, dev_name, ib_port, link_type):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--server-host", type=str,
-                        help="--server-host", default="127.0.0.1")
+                        help="--server-host", default="0.0.0.0")
     parser.add_argument("--server-port", type=int,
                         help="--server-port", default=4469)
 
