@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 import zmq
@@ -5,47 +6,59 @@ import zmq
 import torch
 import _slime_c
 
+async def await_expr():
+    zmq_ctx = zmq.Context(2)
+    send_socket = zmq_ctx.socket(zmq.PUSH)
+    send_socket.connect("tcp://localhost:2121")
+    recv_socket = zmq_ctx.socket(zmq.PULL)
+    recv_socket.bind("tcp://localhost:1212")
 
-zmq_ctx = zmq.Context(2)
-send_socket = zmq_ctx.socket(zmq.PUSH)
-send_socket.connect("tcp://localhost:2121")
-recv_socket = zmq_ctx.socket(zmq.PULL)
-recv_socket.bind("tcp://localhost:1212")
+    x = torch.zeros([5, 5], device="cuda")
 
-x = torch.zeros([5, 5], device="cuda")
+    ctx = _slime_c.rdma_context()
 
-ctx = _slime_c.rdma_context()
+    # Init RDMA
+    ctx.init_rdma_context("mlx5_bond_0", 1, "Ethernet")
 
-# Init RDMA
-ctx.init_rdma_context("mlx5_bond_0", 1, "Ethernet")
+    mr_key = "source_tensor"
+    # Init Memory Region
+    ctx.register_memory_region(mr_key, x.data_ptr(), x.numel() * x.itemsize)
 
-mr_key = "source_tensor"
-# Init Memory Region
-ctx.register_memory_region(mr_key, x.data_ptr(), x.numel() * x.itemsize)
+    # memory key
+    local_rkey = ctx.get_r_key(mr_key)
+    # rdma info
+    local_rdma_info = ctx.get_local_rdma_info()
 
-# memory key
-local_rkey = ctx.get_r_key(mr_key)
-# rdma info
-local_rdma_info = ctx.get_local_rdma_info()
+    # exchange RDMA Info
+    send_socket.send_pyobj([
+        local_rdma_info.get_gid(),
+        local_rdma_info.gidx,
+        local_rdma_info.lid,
+        local_rdma_info.qpn, 
+        local_rdma_info.psn, 
+        local_rdma_info.mtu, 
+        x.data_ptr(), 
+        local_rkey
+    ])
+    gid, gidx, lid, qpn, psn, mtu, data_ptr, rkey = recv_socket.recv_pyobj()
+    remote_rdma_info = _slime_c.rdma_info(
+        qpn, gid[0], gid[1], gidx, lid, psn, mtu
+    )
+    remote_rdma_info.log()
+    ctx.modify_qp_to_rtsr(remote_rdma_info)
 
-# exchange RDMA Info
-send_socket.send_pyobj([
-    local_rdma_info.get_gid(),
-    local_rdma_info.gidx,
-    local_rdma_info.lid,
-    local_rdma_info.qpn, 
-    local_rdma_info.psn, 
-    local_rdma_info.mtu, 
-    x.data_ptr(), 
-    local_rkey
-])
-gid, gidx, lid, qpn, psn, mtu, data_ptr, rkey = recv_socket.recv_pyobj()
-remote_rdma_info = _slime_c.rdma_info(
-    qpn, gid[0], gid[1], gidx, lid, psn, mtu
-)
-remote_rdma_info.log()
-ctx.modify_qp_to_rtsr(remote_rdma_info)
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
 
-ctx.r_rdma_async(1, data_ptr, x.data_ptr(), 12, mr_key, rkey, 1)
-ctx.cq_poll_handle()
-print(x)
+    def _callback(code):
+        print(f"Callback has been successfully called, {code=}")
+        future.set_result("Callback success")
+
+    ctx.r_rdma_async(data_ptr, x.data_ptr(), 12, mr_key, rkey, _callback)
+    ctx.cq_poll_handle()
+
+    future_result = await future
+    print(f"{future_result=}")
+
+if __name__ == "__main__":
+    asyncio.run(await_expr())

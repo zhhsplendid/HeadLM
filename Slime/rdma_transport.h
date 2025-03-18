@@ -57,10 +57,6 @@ public:
   uint32_t getRKey(std::string mr_key) { return memory_region_[mr_key]->rkey; }
 
 private:
-  /** Post recv message, specially the callback */
-  void post_recv_ack(wr_info_base *info);
-
-private:
   std::string device_name_ = "";
 
   /* RDMA Configuration */

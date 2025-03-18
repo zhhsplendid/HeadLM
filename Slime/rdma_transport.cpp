@@ -83,38 +83,20 @@ void RDMAContext::cq_poll_handle() {
     while (ibv_poll_cq(cq_, 1, &wc) > 0) {
       if (wc.status == IBV_WC_SUCCESS) {
         std::cout << "RDMA READ completed successfully." << std::endl;
-
-        if (wc.opcode == IBV_WC_RECV) {
-          wr_info_base *ptr = reinterpret_cast<wr_info_base *>(wc.wr_id);
-          if (ptr->get_wr_type() == WrType::RDMA_READ_ACK) {
-            SLIME_LOG_DEBUG("read cache done: Received IMM, imm_data: ",
-                            wc.imm_data);
-            auto *info = reinterpret_cast<read_info *>(ptr);
-            info->callback(wc.imm_data);
-            delete info;
-          }
+        wr_info_base *ptr = reinterpret_cast<wr_info_base *>(wc.wr_id);
+        if (ptr->get_wr_type() == WrType::RDMA_READ_ACK) {
+          SLIME_LOG_DEBUG("read cache done: Received IMM, imm_data: ",
+                          wc.imm_data);
+          auto *info = reinterpret_cast<read_info *>(ptr);
+          info->callback(wc.imm_data);
+          delete info;
         }
+        
       } else {
         std::cerr << "RDMA READ failed with status: "
                   << ibv_wc_status_str(wc.status) << std::endl;
       }
     }
-  }
-}
-
-void RDMAContext::post_recv_ack(wr_info_base *info) {
-  struct ibv_recv_wr recv_wr = {0};
-  struct ibv_recv_wr *bad_recv_wr = NULL;
-
-  recv_wr.wr_id = (uintptr_t)info;
-
-  recv_wr.next = NULL;
-  recv_wr.sg_list = NULL;
-  recv_wr.num_sge = 0;
-
-  int ret = ibv_post_recv(qp_, &recv_wr, &bad_recv_wr);
-  if (ret) {
-    SLIME_ABORT("Failed to post recv wr " + std::string(strerror(ret)));
   }
 }
 
@@ -125,7 +107,6 @@ int64_t RDMAContext::r_rdma_async(uintptr_t target_addr, uintptr_t source_addr,
   /* TODO: add a callback for Async await */
   auto *call_back_info =
       new read_info([callback](unsigned int code) { callback(code); });
-  post_recv_ack(call_back_info);
 
   int ret;
 
@@ -138,7 +119,7 @@ int64_t RDMAContext::r_rdma_async(uintptr_t target_addr, uintptr_t source_addr,
   struct ibv_send_wr wr, *bad_wr = NULL;
   memset(&wr, 0, sizeof(wr));
   /* TODO: Set the last slice to a callback */
-  wr.wr_id = 0;
+  wr.wr_id = (uintptr_t)call_back_info;
   wr.opcode = IBV_WR_RDMA_READ;
   wr.sg_list = &sge;
   wr.num_sge = 1;
