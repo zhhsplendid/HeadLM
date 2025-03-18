@@ -3,7 +3,7 @@ import time
 import zmq
 
 import torch
-import _slime_c
+from slime import _slime_c
 
 zmq_ctx = zmq.Context(2)
 send_socket = zmq_ctx.socket(zmq.PUSH)

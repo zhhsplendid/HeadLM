@@ -4,7 +4,7 @@ import time
 import zmq
 
 import torch
-import _slime_c
+from slime import _slime_c
 
 
 async def await_expr():
@@ -56,7 +56,7 @@ async def await_expr():
     #ctx.cq_poll_handle()
     future_result = await future
     print(f"{future_result=}")
-    #ctx.stop_cq_future()
+    ctx.stop_cq_future()
 
 
 if __name__ == "__main__":
