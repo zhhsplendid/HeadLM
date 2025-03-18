@@ -5,7 +5,6 @@ import zmq
 import torch
 import _slime_c
 
-
 zmq_ctx = zmq.Context(2)
 send_socket = zmq_ctx.socket(zmq.PUSH)
 send_socket.connect("tcp://localhost:1212")
@@ -30,19 +29,12 @@ local_rdma_info = ctx.get_local_rdma_info()
 
 # exchange RDMA Info
 send_socket.send_pyobj([
-    local_rdma_info.get_gid(),
-    local_rdma_info.gidx,
-    local_rdma_info.lid,
-    local_rdma_info.qpn, 
-    local_rdma_info.psn, 
-    local_rdma_info.mtu, 
-    x.data_ptr(), 
-    local_rkey
+    local_rdma_info.get_gid(), local_rdma_info.gidx, local_rdma_info.lid,
+    local_rdma_info.qpn, local_rdma_info.psn, local_rdma_info.mtu,
+    x.data_ptr(), local_rkey
 ])
 gid, gidx, lid, qpn, psn, mtu, data_ptr, rkey = recv_socket.recv_pyobj()
-remote_rdma_info = _slime_c.rdma_info(
-    qpn, gid[0], gid[1], gidx, lid, psn, mtu
-)
+remote_rdma_info = _slime_c.rdma_info(qpn, gid[0], gid[1], gidx, lid, psn, mtu)
 remote_rdma_info.log()
 
 ctx.modify_qp_to_rtsr(remote_rdma_info)

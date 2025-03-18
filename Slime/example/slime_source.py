@@ -6,6 +6,7 @@ import zmq
 import torch
 import _slime_c
 
+
 async def await_expr():
     zmq_ctx = zmq.Context(2)
     send_socket = zmq_ctx.socket(zmq.PUSH)
@@ -31,19 +32,13 @@ async def await_expr():
 
     # exchange RDMA Info
     send_socket.send_pyobj([
-        local_rdma_info.get_gid(),
-        local_rdma_info.gidx,
-        local_rdma_info.lid,
-        local_rdma_info.qpn, 
-        local_rdma_info.psn, 
-        local_rdma_info.mtu, 
-        x.data_ptr(), 
-        local_rkey
+        local_rdma_info.get_gid(), local_rdma_info.gidx, local_rdma_info.lid,
+        local_rdma_info.qpn, local_rdma_info.psn, local_rdma_info.mtu,
+        x.data_ptr(), local_rkey
     ])
     gid, gidx, lid, qpn, psn, mtu, data_ptr, rkey = recv_socket.recv_pyobj()
-    remote_rdma_info = _slime_c.rdma_info(
-        qpn, gid[0], gid[1], gidx, lid, psn, mtu
-    )
+    remote_rdma_info = _slime_c.rdma_info(qpn, gid[0], gid[1], gidx, lid, psn,
+                                          mtu)
     remote_rdma_info.log()
     ctx.modify_qp_to_rtsr(remote_rdma_info)
 
@@ -52,13 +47,17 @@ async def await_expr():
 
     def _callback(code):
         print(f"Callback has been successfully called, {code=}")
-        future.set_result("Callback success")
+        loop.call_soon_threadsafe(future.set_result, code)
+        #future.set_result("Callback success")
+        print(f"Callback after set future")
 
     ctx.r_rdma_async(data_ptr, x.data_ptr(), 12, mr_key, rkey, _callback)
-    ctx.cq_poll_handle()
-
+    ctx.launch_cq_future()
+    #ctx.cq_poll_handle()
     future_result = await future
     print(f"{future_result=}")
+    #ctx.stop_cq_future()
+
 
 if __name__ == "__main__":
     asyncio.run(await_expr())

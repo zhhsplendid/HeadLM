@@ -59,7 +59,6 @@ void RDMAContext::stop_cq_future() {
 }
 
 void RDMAContext::cq_poll_handle() {
-  /* TODO: Handle Callback */
   SLIME_LOG_INFO("Polling CQ");
 
   SLIME_ASSERT(connected_, "Please construct first");
@@ -91,7 +90,7 @@ void RDMAContext::cq_poll_handle() {
           info->callback(wc.imm_data);
           delete info;
         }
-        
+
       } else {
         std::cerr << "RDMA READ failed with status: "
                   << ibv_wc_status_str(wc.status) << std::endl;
@@ -104,7 +103,6 @@ int64_t RDMAContext::r_rdma_async(uintptr_t target_addr, uintptr_t source_addr,
                                   uint64_t length, std::string mr_key,
                                   int64_t remote_rkey,
                                   std::function<void(unsigned int)> callback) {
-  /* TODO: add a callback for Async await */
   auto *call_back_info =
       new read_info([callback](unsigned int code) { callback(code); });
 
@@ -118,7 +116,7 @@ int64_t RDMAContext::r_rdma_async(uintptr_t target_addr, uintptr_t source_addr,
 
   struct ibv_send_wr wr, *bad_wr = NULL;
   memset(&wr, 0, sizeof(wr));
-  /* TODO: Set the last slice to a callback */
+
   wr.wr_id = (uintptr_t)call_back_info;
   wr.opcode = IBV_WR_RDMA_READ;
   wr.sg_list = &sge;

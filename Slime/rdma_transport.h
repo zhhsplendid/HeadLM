@@ -34,7 +34,6 @@ public:
                                size_t length);
 
   /* Async RDMA Read */
-  /* TODO: Add callback */
   int64_t r_rdma_async(uintptr_t target_addr, uintptr_t source_addr,
                        uint64_t length, std::string mr_key, int64_t remote_rkey,
                        std::function<void(unsigned int)> callback);
@@ -44,7 +43,6 @@ public:
   }
 
   /* Completion Queue Polling */
-  /* TODO: Handle callback */
   void cq_poll_handle();
   void launch_cq_future();
   void stop_cq_future();
