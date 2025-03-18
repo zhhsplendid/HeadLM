@@ -1,6 +1,9 @@
 import asyncio
 
+import time
 from typing import Tuple
+
+import torch
 
 import uvicorn
 import uvloop
@@ -10,7 +13,7 @@ from fastapi.requests import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from slime.transfer_engine.engine import TransferEngine
+from Slime.slime.transfer_engine.engine import TransferEngine
 
 from .server_args import ServerArgs
 
@@ -18,6 +21,9 @@ import argparse
 
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
+
+session_id = 0
 
 
 app = FastAPI()
@@ -38,15 +44,43 @@ async def exchange_info(raw_request: Request) -> Response:
     return JSONResponse({"status": True})
 
 
+@app.get("/init_link")
+async def create_link() -> Response:
+    global session_id
+    id = session_id
+    session_id += 1
+    transfer_engine.init_link(id)
+
+    return JSONResponse({"status": "Success", "id": id})
+
 @app.post("/rdma_read")
-async def rdma_write(raw_request: Request) -> Response:
+async def rdma_read(raw_request: Request) -> Response:
     raw_request = await raw_request.json()
+    id = raw_request["id"]
     length = raw_request["length"]
     rkey = raw_request["remote_rkey"]
     target_addr = raw_request["remote_addr"]
+    offset = raw_request["offset"]
 
-    await transfer_engine.r_rdma_async(target_addr, length, rkey)
-    return {"psum": transfer_engine.memory_pool.sum()}
+    begin = time.time()
+    await transfer_engine.r_rdma_async(id, target_addr, offset, length, rkey)
+    end = time.time()
+    print(f"latency: {end - begin}, bw: {(length) / (end - begin) / (1e9)} GBps")
+    return JSONResponse({"psum": int(torch.sum(transfer_engine.links[id].memory_pool[0]))})
+
+
+@app.get("/get_local_info")
+async def get_local_info(raw_request: Request) -> Response:
+    raw_request = await raw_request.json()
+    id = raw_request["id"]
+    info = transfer_engine.get_local_info(id)
+    return JSONResponse({
+        "gid": info.get_gid(),
+        "gidx": info.gidx,
+        "lid": info.lid,
+        "qpn": info.qpn,
+        "psn": info.psn,
+        "mtu": info.mtu,})
 
 
 def launch_server(server_args, dev_name, ib_port, link_type):

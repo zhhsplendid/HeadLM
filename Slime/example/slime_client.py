@@ -54,7 +54,7 @@ psum = requests.post(
     "http://localhost:4469/rdma_read", 
     json={
         "remote_rkey": ctx.get_r_key(mr_key),
-        "length": 1024 * 1024 * 5 * local_memory.itemsize,
+        "length": 1024 * 1024 * 512 * local_memory.itemsize,
         "remote_addr": local_memory.data_ptr()
     }
 )

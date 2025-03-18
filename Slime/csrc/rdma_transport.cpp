@@ -110,7 +110,7 @@ int64_t RDMAContext::r_rdma_async(uintptr_t target_addr, uintptr_t source_addr,
 
   struct ibv_sge sge;
   memset(&sge, 0, sizeof(sge));
-  sge.addr = (uint64_t)memory_region_[mr_key]->addr;
+  sge.addr = source_addr;
   sge.length = length;
   sge.lkey = memory_region_[mr_key]->lkey;
 
@@ -262,7 +262,7 @@ int64_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port,
   if (!ib_ctx_) {
     SLIME_LOG_INFO(
         "Can't find or failed to open the specified device, try to open "
-        "the default device {}"
+        "the default device "
         << (char *)ibv_get_device_name(dev_list[0]));
     ib_ctx_ = ibv_open_device(dev_list[0]);
     if (!ib_ctx_) {
@@ -270,6 +270,14 @@ int64_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port,
       return -1;
     }
   }
+
+  SLIME_LOG_INFO("Get NIC:" << dev_name);
+  struct ibv_device_attr device_attr;
+  SLIME_ASSERT_EQ(ibv_query_device(ib_ctx_, &device_attr), 0,
+                  "Failed to query device");
+  SLIME_LOG_INFO("Max Memory Region:" << device_attr.max_mr);
+  SLIME_LOG_INFO("Max Memory Region Size:" << device_attr.max_mr_size);
+  SLIME_LOG_INFO("Max Memory QP WR:" << device_attr.max_qp_wr);
 
   struct ibv_port_attr port_attr;
   ib_port_ = ib_port;
