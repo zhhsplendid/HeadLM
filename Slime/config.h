@@ -2,6 +2,7 @@
 
 #include "logging.h"
 #include <cstdint>
+#include <functional>
 #include <infiniband/verbs.h>
 #include <iostream>
 #include <string>
@@ -49,5 +50,34 @@ typedef struct RDMAInfo {
     SLIME_LOG_INFO("MTU: " << mtu);
   }
 } rdma_info_t;
+
+enum class WrType {
+  BASE,
+  RDMA_READ_ACK,
+  RDMA_WRITE_ACK,
+};
+
+struct wr_info_base {
+  protected:
+   WrType wr_type;
+
+  public:
+   wr_info_base(WrType wr_type) : wr_type(wr_type) {}
+   virtual ~wr_info_base() = default;
+   WrType get_wr_type() const { return wr_type; }
+};
+
+struct write_info : wr_info_base {
+   std::function<void(int)> callback;
+   write_info(std::function<void(int)> callback)
+       : wr_info_base(WrType::RDMA_WRITE_ACK), callback(callback) {}
+};
+
+struct read_info : wr_info_base {
+   // call back function.
+   std::function<void(unsigned int)> callback;
+   read_info(std::function<void(unsigned int)> callback)
+       : wr_info_base(WrType::RDMA_READ_ACK), callback(callback) {}
+};
 
 }; // namespace slime

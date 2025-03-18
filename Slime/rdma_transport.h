@@ -35,7 +35,7 @@ public:
 
   /* Async RDMA Read */
   /* TODO: Add callback */
-  int64_t r_rdma_async(uint64_t info, uintptr_t target_addr,
+  int64_t r_rdma_async(uintptr_t target_addr,
                        uintptr_t source_addr, uint64_t length,
                        std::string mr_key, int64_t remote_rkey, std::function<void(unsigned int)> callback);
   
@@ -55,6 +55,10 @@ public:
   /* Add a memory pool management */
   uint32_t getLKey(std::string mr_key) { return memory_region_[mr_key]->rkey; }
   uint32_t getRKey(std::string mr_key) { return memory_region_[mr_key]->rkey; }
+
+private:
+  /** Post recv message, specially the callback */
+  void post_recv_ack(wr_info_base *info);
 
 private:
   std::string device_name_ = "";
