@@ -22,37 +22,77 @@ namespace slime {
 // than max layers of model.
 #define MAX_RECV_WR 64
 
+void RDMAContext::launch_cq_future() {
+  cq_future_ =
+      std::async(std::launch::async, [this]() -> void { cq_poll_handle(); });
+}
+
+void RDMAContext::stop_cq_future() {
+  if (!stop_ && cq_future_.valid()) {
+    stop_ = true;
+
+    // create fake wr to wake up cq thread
+    ibv_req_notify_cq(cq_, 0);
+    struct ibv_sge sge;
+    memset(&sge, 0, sizeof(sge));
+    sge.addr = (uintptr_t)this;
+    sge.length = sizeof(*this);
+    sge.lkey = 0;
+
+    struct ibv_send_wr send_wr;
+    memset(&send_wr, 0, sizeof(send_wr));
+    send_wr.wr_id = (uintptr_t)this;
+    send_wr.sg_list = &sge;
+    send_wr.num_sge = 1;
+    send_wr.opcode = IBV_WR_SEND;
+    send_wr.send_flags = IBV_SEND_SIGNALED;
+
+    struct ibv_send_wr *bad_send_wr;
+    {
+      std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
+      ibv_post_send(qp_, &send_wr, &bad_send_wr);
+    }
+    // wait thread done
+    cq_future_.get();
+  }
+}
+
 void RDMAContext::cq_poll_handle() {
   /* TODO: Handle Callback */
   SLIME_LOG_INFO("Polling CQ");
 
-  struct ibv_cq *cq;
-  void *cq_context;
+  SLIME_ASSERT(connected_, "Please construct first");
+  SLIME_ASSERT(comp_channel_ != nullptr, "comp_channel_ should be constructed");
 
-  if (ibv_get_cq_event(comp_channel_, &cq, &cq_context) != 0) {
-    SLIME_ABORT("Failed to get CQ event");
-  }
+  while (!stop_) {
+    struct ibv_cq *ev_cq;
+    void *cq_context;
 
-  if (ibv_req_notify_cq(cq, 0) != 0) {
-    SLIME_ABORT("Failed to request CQ notification");
-  }
+    if (ibv_get_cq_event(comp_channel_, &ev_cq, &cq_context) != 0) {
+      SLIME_ABORT("Failed to get CQ event");
+    }
 
-  struct ibv_wc wc = {0};
+    ibv_ack_cq_events(ev_cq, 1);
+    if (ibv_req_notify_cq(ev_cq, 0) != 0) {
+      SLIME_ABORT("Failed to request CQ notification");
+    }
 
-  while (ibv_poll_cq(cq, 1, &wc) > 0) {
-    if (wc.status == IBV_WC_SUCCESS) {
-      std::cout << "RDMA READ completed successfully." << std::endl;
-    } else {
-      std::cerr << "RDMA READ failed with status: "
-                << ibv_wc_status_str(wc.status) << std::endl;
+    struct ibv_wc wc = {0};
+
+    while (ibv_poll_cq(cq_, 1, &wc) > 0) {
+      if (wc.status == IBV_WC_SUCCESS) {
+        std::cout << "RDMA READ completed successfully." << std::endl;
+      } else {
+        std::cerr << "RDMA READ failed with status: "
+                  << ibv_wc_status_str(wc.status) << std::endl;
+      }
     }
   }
 }
 
 int64_t RDMAContext::r_rdma_async(uint64_t info, uintptr_t target_addr,
                                   uintptr_t source_addr, uint64_t length,
-                                  std::string mr_key, int64_t remote_rkey,
-                                  uintptr_t wid) {
+                                  std::string mr_key, int64_t remote_rkey) {
   /* TODO: add a callback for Async await */
   int ret;
 
@@ -64,6 +104,7 @@ int64_t RDMAContext::r_rdma_async(uint64_t info, uintptr_t target_addr,
 
   struct ibv_send_wr wr, *bad_wr = NULL;
   memset(&wr, 0, sizeof(wr));
+  /* TODO: Set the last slice to a callback */
   wr.wr_id = 0;
   wr.opcode = IBV_WR_RDMA_READ;
   wr.sg_list = &sge;
@@ -72,7 +113,10 @@ int64_t RDMAContext::r_rdma_async(uint64_t info, uintptr_t target_addr,
   wr.wr.rdma.remote_addr = target_addr;
   wr.wr.rdma.rkey = remote_rkey;
 
-  ret = ibv_post_send(qp_, &wr, &bad_wr);
+  {
+    std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
+    ret = ibv_post_send(qp_, &wr, &bad_wr);
+  }
 
   if (ret) {
     SLIME_ABORT("Failed to post RDMA send : " << strerror(ret));

@@ -16,9 +16,8 @@ class TransferEngine {
 public:
   TransferEngine() {}
 
-  int64_t registerRDMAContext(std::string key, RDMAContext ctx) {
-    transport_links_[key] = ctx;
-    return 0;
+  int64_t registerRDMAContext(const std::string key, RDMAContext ctx) {
+    throw std::runtime_error("Not Implemented Error");
   }
 
 private:

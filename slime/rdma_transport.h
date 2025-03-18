@@ -3,10 +3,12 @@
 #include "config.h"
 
 #include <cstdint>
+#include <mutex>
 #include <infiniband/verbs.h>
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
+#include <future>
 
 namespace slime {
 
@@ -16,6 +18,7 @@ public:
     A link of rdma QP.
   */
   RDMAContext() {}
+
   ~RDMAContext() {}
 
   /* Initialize */
@@ -33,11 +36,17 @@ public:
   /* TODO: Add callback */
   int64_t r_rdma_async(uint64_t info, uintptr_t target_addr,
                        uintptr_t source_addr, uint64_t length,
-                       std::string mr_key, int64_t remote_rkey, uintptr_t wid);
+                       std::string mr_key, int64_t remote_rkey);
+  
+  int64_t batch_r_rdma_async() {
+    throw std::runtime_error("NotImplementedError");
+  }
 
   /* Completion Queue Polling */
   /* TODO: Handle callback */
   void cq_poll_handle();
+  void launch_cq_future();
+  void stop_cq_future();
 
   rdma_info_t get_local_rdma_info() { return local_rdma_info_; }
   rdma_info_t get_remote_rdma_info() { return remote_rdma_info_; }
@@ -67,6 +76,16 @@ private:
   /* State Management */
   bool initialized_ = false;
   bool connected_ = false;
+  std::atomic<int> outstanding_rdma_reads_{0};
+  std::atomic<bool> stop_{false};
+
+  /* Send Mutex */
+  std::mutex rdma_post_send_mutex_;
+
+  /* async cq handler */
+  std::future<void> cq_future_;
+
+  std::mutex mutex_;
 };
 
 } // namespace slime
