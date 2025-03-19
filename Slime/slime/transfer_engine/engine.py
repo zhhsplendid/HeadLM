@@ -2,6 +2,8 @@ from typing import Dict, Tuple
 
 from .context import RDMAContext
 
+from slime.config import RDMAInfo
+
 
 class TransferEngine:
     def __init__(self, dev_name: str, ib_port: int, link_type="Ethernet"):
@@ -9,24 +11,35 @@ class TransferEngine:
         self.ib_port = ib_port
         self.link_type=link_type
         self.links:Dict[int, RDMAContext] = {}
-    
+
     def init_link(self, session_id: int):
         if session_id in self.links:
             raise KeyError(f"session_id {session_id} already in links")
         self.links[session_id] = RDMAContext(dev_name=self.dev_name, ib_port=self.ib_port, link_type=self.link_type)
 
-    def construct(self, id, gid: Tuple[int, int], gidx: int, lid: int, qpn: int, psn: int, mtu: int):
+    def register_mr(self, session_id, mr_key, length, device="cpu"):
+        if session_id not in self.links:
+            raise KeyError(f"session_id {id} not in links")
+        self.links[session_id].register_mr(mr_key, length, device=device)
+
+    def construct(self, id, local_info: RDMAInfo):
         if id not in self.links:
             raise KeyError(f"session_id {id} not in links")
-        self.links[id].construct(gid, gidx, lid, qpn, psn, mtu)
+        self.links[id].construct(local_info)
     
-    def get_local_info(self, session_id: int):
+    def get_local_info(self, session_id: int) -> RDMAInfo:
         if session_id not in self.links:
             raise KeyError(f"session_id {session_id} not in links")
-        return self.links[session_id].get_local_info()
+        local_info = self.links[session_id].get_local_info()
+        return local_info
     
-    async def r_rdma_async(self, session_id, target_addr, offset, length, rkey):
+    async def r_rdma_async(self, session_id, mr_key, target_addr, offset, length, rkey):
         if session_id not in self.links:
             raise KeyError(f"session_id {session_id} not in links")
-        await self.links[session_id].r_rdma_async(target_addr, offset, length, rkey)
+        await self.links[session_id].r_rdma_async(mr_key, target_addr, offset, length, rkey)
         
+    def stop_link(self, session_id: int):
+        if session_id not in self.links:
+            raise KeyError(f"session_id {id} not in links")
+        self.links[session_id]._rdma_context_c.stop_cq_future()
+        del self.links[session_id]

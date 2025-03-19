@@ -1,11 +1,12 @@
+import json
+import time
 import asyncio
 
-import time
-
-from typing import Tuple
+from typing import Dict, Tuple
 
 import torch
 
+from slime.config import RDMAInfo
 from slime import _slime_c
 
 
@@ -13,36 +14,41 @@ class RDMAContext:
     def __init__(self, dev_name: str, ib_port:int=1, link_type:str="Ethernet"):
         self._rdma_context_c = _slime_c.rdma_context()
         self.init_rdma_context(dev_name, ib_port, link_type)
-        # 1G Memory Pool
-        self.memory_pool = torch.zeros([1024, 1024, 1024, 16], dtype=torch.int8)
-        self.mr_key = "remote_kv"
-        self._rdma_context_c.register_memory_region(
-            self.mr_key,
-            self.memory_pool.data_ptr(),
-            self.memory_pool.numel() * self.memory_pool.itemsize)
+        self.memory_pool: Dict[str, torch.Tensor] = {}
     
     def init_rdma_context(self, dev_name: str, ib_port:int=1, link_type:str="Ethernet") -> int:
         return self._rdma_context_c.init_rdma_context(dev_name, ib_port, link_type)
     
-    def construct(self, gid: Tuple[int, int], gidx: int, lid: int, qpn: int, psn: int, mtu: int):
+    def register_mr(self, mr_key,  length: int, device="cpu"):
+        t = torch.zeros((length, ), dtype=torch.uint8, requires_grad=False)
+        self._rdma_context_c.register_memory_region(mr_key, t.data_ptr(), length)
+        self.memory_pool[mr_key] = t
+    
+    def construct(self, info: RDMAInfo):
         remote_rdma_info = _slime_c.rdma_info(
-            qpn, gid[0], gid[1], gidx, lid, psn, mtu
+            info.qpn, info.gid[0], info.gid[1], info.gidx, info.lid, info.psn, info.mtu
         )
-        remote_rdma_info.log()
+        print(info)
         self._rdma_context_c.modify_qp_to_rtsr(remote_rdma_info)
         self._rdma_context_c.launch_cq_future()
 
     def get_local_info(self):
-        return self._rdma_context_c.get_local_rdma_info()
+        local_info = self._rdma_context_c.get_local_rdma_info()
+        return RDMAInfo(
+            gid = local_info.get_gid(),
+            gidx = local_info.gidx,
+            lid = local_info.lid,
+            qpn = local_info.qpn,
+            psn = local_info.psn,
+            mtu = local_info.mtu
+        )
 
-    async def r_rdma_async(self, target_addr, offset, length, rkey):
+    async def r_rdma_async(self, mr_key, target_addr, offset, length, rkey):
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         def _callback(code):
-            print(f"Callback has been successfully called, {code=}")
             loop.call_soon_threadsafe(future.set_result, code)
-            #future.set_result("Callback success")
-            print(f"Callback after set future")
 
-        self._rdma_context_c.r_rdma_async(target_addr, self.memory_pool.data_ptr() + offset, length, self.mr_key, rkey, _callback)
+        self._rdma_context_c.r_rdma_async(target_addr, self.memory_pool[mr_key].data_ptr() + offset, length, mr_key, rkey, _callback)
+
         await future

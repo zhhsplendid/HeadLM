@@ -1,7 +1,8 @@
-import asyncio
-
+import json
 import time
-from typing import Tuple
+from contextlib import asynccontextmanager
+
+import asyncio
 
 import torch
 
@@ -13,7 +14,8 @@ from fastapi.requests import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from Slime.slime.transfer_engine.engine import TransferEngine
+from slime.config import RDMAInfo
+from slime.transfer_engine.engine import TransferEngine
 
 from .server_args import ServerArgs
 
@@ -25,13 +27,33 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 session_id = 0
 
+async def long_running_task():
+    while True:
+        print("Heart Beat")
+        await asyncio.sleep(1)  
 
-app = FastAPI()
+# 使用 lifespan 上下文管理器
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: 应用启动时执行
+    print("Application is starting up...")
+    task = asyncio.create_task(long_running_task())
+    
+    yield  # 这里会暂停，直到应用关闭
+    
+    # Shutdown: 应用关闭时执行
+    print("Application is shutting down...")
+    task.cancel()  # 取消后台任务
+    try:
+        await task
+    except asyncio.CancelledError:
+        print("Periodic task has been cancelled.")
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware)
 
 
 transfer_engine: TransferEngine = None
-
 
 @app.get("/health")
 async def health() -> Response:
@@ -40,7 +62,9 @@ async def health() -> Response:
 @app.post("/exchange_info")
 async def exchange_info(raw_request: Request) -> Response:
     raw_request = await raw_request.json()
-    transfer_engine.construct(**raw_request)
+    id = raw_request["id"]
+    info = RDMAInfo(**json.loads(raw_request["info"]))
+    transfer_engine.construct(id, info)
     return JSONResponse({"status": True})
 
 
@@ -53,20 +77,37 @@ async def create_link() -> Response:
 
     return JSONResponse({"status": "Success", "id": id})
 
+@app.get("/stop_link")
+async def register_mr(raw_request: Request) -> Response:
+    raw_request = await raw_request.json()
+    id = raw_request["id"]
+    transfer_engine.stop_link(id)
+    return JSONResponse({"status": True})
+
+@app.post("/register_mr")
+async def register_mr(raw_request: Request) -> Response:
+    raw_request = await raw_request.json()
+    id = raw_request["id"]
+    mr_key = raw_request["mr_key"]
+    length = raw_request["length"]
+    transfer_engine.register_mr(id, mr_key, length)
+    return JSONResponse({"status": True})
+
 @app.post("/rdma_read")
 async def rdma_read(raw_request: Request) -> Response:
     raw_request = await raw_request.json()
     id = raw_request["id"]
+    mr_key = raw_request["mr_key"]
     length = raw_request["length"]
     rkey = raw_request["remote_rkey"]
     target_addr = raw_request["remote_addr"]
     offset = raw_request["offset"]
 
     begin = time.time()
-    await transfer_engine.r_rdma_async(id, target_addr, offset, length, rkey)
+    await transfer_engine.r_rdma_async(id, mr_key, target_addr, offset, length, rkey)
     end = time.time()
     print(f"latency: {end - begin}, bw: {(length) / (end - begin) / (1e9)} GBps")
-    return JSONResponse({"psum": int(torch.sum(transfer_engine.links[id].memory_pool[0]))})
+    return JSONResponse({"psum": int(torch.sum(transfer_engine.links[id].memory_pool[mr_key]))})
 
 
 @app.get("/get_local_info")
@@ -74,13 +115,7 @@ async def get_local_info(raw_request: Request) -> Response:
     raw_request = await raw_request.json()
     id = raw_request["id"]
     info = transfer_engine.get_local_info(id)
-    return JSONResponse({
-        "gid": info.get_gid(),
-        "gidx": info.gidx,
-        "lid": info.lid,
-        "qpn": info.qpn,
-        "psn": info.psn,
-        "mtu": info.mtu,})
+    return info.model_dump_json()
 
 
 def launch_server(server_args, dev_name, ib_port, link_type):

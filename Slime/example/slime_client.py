@@ -1,56 +1,45 @@
 import time
 
+import json
 import requests
 
 import torch
+
+from slime.transfer_engine.context import RDMAContext
+from slime.config import RDMAInfo
 from slime import _slime_c
 
 id = remote_info = requests.get(
     "http://10.130.8.139:4469/init_link"
 ).json()["id"]
 
-ctx = _slime_c.rdma_context()
+length = 16000000000
 
-# Init RDMA
-ctx.init_rdma_context("mlx5_bond_0", 1, "Ethernet")
+mr_key = "kv"
+rdma_ctx = RDMAContext("mlx5_bond_7", 1, "Ethernet")
+rdma_ctx.register_mr(mr_key, length)
 
-# Init Memory Region
-mr_key = "local_kv"
-local_memory = torch.ones([1024, 1024, 1024, 16], dtype=torch.int8)
-ctx.register_memory_region(
-    mr_key,
-    local_memory.data_ptr(),
-    local_memory.numel() * local_memory.itemsize
+requests.post(
+    "http://10.130.8.139:4469/register_mr", 
+    json={
+        "id": id,
+        "mr_key": mr_key,
+        "length": length
+    }
 )
 
-# memory key
-local_rkey = ctx.get_r_key(mr_key)
-# rdma info
-local_rdma_info = ctx.get_local_rdma_info()
-local_rdma_info.log()
-
-info = remote_info = requests.get(
+local_info = rdma_ctx.get_local_info()
+remote_info = requests.get(
     "http://10.130.8.139:4469/get_local_info", json={"id": id}
 ).json()
-
-ctx.modify_qp_to_rtsr(
-    _slime_c.rdma_info(
-        info["qpn"], info["gid"][0], info["gid"][1], info["gidx"],
-        info["lid"],
-        info["psn"], info["mtu"]
-    )
-)
+remote_info = RDMAInfo(**json.loads(remote_info))
+rdma_ctx.construct(remote_info)
 
 requests.post(
     "http://10.130.8.139:4469/exchange_info", 
     json={
         "id": id,
-        "gid": local_rdma_info.get_gid(),
-        "gidx": local_rdma_info.gidx,
-        "lid": local_rdma_info.lid,
-        "qpn": local_rdma_info.qpn,
-        "psn": local_rdma_info.psn,
-        "mtu": local_rdma_info.mtu,
+        "info": local_info.model_dump_json()
     }
 )
 
@@ -58,10 +47,11 @@ psum = requests.post(
     "http://10.130.8.139:4469/rdma_read", 
     json={
         "id":id,
-        "remote_rkey": ctx.get_r_key(mr_key),
-        "length": 128 * 64 * 1 * 2 * local_memory.itemsize,
+        "mr_key": mr_key,
+        "remote_rkey": rdma_ctx._rdma_context_c.get_r_key(mr_key),
+        "length": 1024,
         "offset": 0,
-        "remote_addr": local_memory.data_ptr()
+        "remote_addr": rdma_ctx.memory_pool[mr_key].data_ptr()
     }
 )
 print(psum.json())
@@ -69,11 +59,35 @@ print(psum.json())
 psum = requests.post(
     "http://10.130.8.139:4469/rdma_read", 
     json={
-        "id": id,
-        "remote_rkey": ctx.get_r_key(mr_key),
-        "length": 1024 * 1024 * 1024 * local_memory.itemsize,
-        "offset": 1024 * 1024 * 512 * local_memory.itemsize,
-        "remote_addr": local_memory.data_ptr()
+        "id":id,
+        "mr_key": mr_key,
+        "remote_rkey": rdma_ctx._rdma_context_c.get_r_key(mr_key),
+        "length": 1024,
+        "offset": 0,
+        "remote_addr": rdma_ctx.memory_pool[mr_key].data_ptr()
     }
 )
 print(psum.json())
+
+psum = requests.post(
+    "http://10.130.8.139:4469/rdma_read", 
+    json={
+        "id":id,
+        "mr_key": mr_key,
+        "remote_rkey": rdma_ctx._rdma_context_c.get_r_key(mr_key),
+        "length": 1024,
+        "offset": 0,
+        "remote_addr": rdma_ctx.memory_pool[mr_key].data_ptr()
+    }
+)
+print(psum.json())
+
+psum = requests.get(
+    "http://10.130.8.139:4469/stop_link", 
+    json={
+        "id":id,
+    }
+)
+print(psum.json())
+
+rdma_ctx._rdma_context_c.stop_cq_future()
