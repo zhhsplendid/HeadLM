@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 class MemoryRegionInfo(BaseModel):
     addr: int
+    offset: int
     r_key: int 
 
 class RDMAInfo(BaseModel):
