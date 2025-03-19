@@ -28,9 +28,11 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 session_id = 0
 
 async def long_running_task():
+    now = time.time()
     while True:
-        print("Heart Beat")
         await asyncio.sleep(1)  
+        print(f"Heart Beat {time.time() - now}")
+        now = time.time()
 
 # 使用 lifespan 上下文管理器
 @asynccontextmanager

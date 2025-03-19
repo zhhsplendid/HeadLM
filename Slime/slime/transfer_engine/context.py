@@ -6,7 +6,7 @@ from typing import Dict, Tuple
 
 import torch
 
-from slime.config import RDMAInfo
+from slime.config import MemoryRegionInfo, RDMAInfo
 from slime import _slime_c
 
 
@@ -14,6 +14,7 @@ class RDMAContext:
     def __init__(self, dev_name: str, ib_port:int=1, link_type:str="Ethernet"):
         self._rdma_context_c = _slime_c.rdma_context()
         self.init_rdma_context(dev_name, ib_port, link_type)
+        self.remote_memory_pool: Dict[str, MemoryRegionInfo]
         self.memory_pool: Dict[str, torch.Tensor] = {}
     
     def init_rdma_context(self, dev_name: str, ib_port:int=1, link_type:str="Ethernet") -> int:
@@ -22,6 +23,10 @@ class RDMAContext:
     def register_mr(self, mr_key,  length: int, device="cpu"):
         t = torch.zeros((length, ), dtype=torch.uint8, requires_grad=False)
         self._rdma_context_c.register_memory_region(mr_key, t.data_ptr(), length)
+        self.memory_pool[mr_key] = t
+    
+    def register_torch(self, mr_key, t: torch.Tensor):
+        self._rdma_context_c.register_memory_region(mr_key, t.data_ptr(), t.numel() * t.itemsize)
         self.memory_pool[mr_key] = t
     
     def construct(self, info: RDMAInfo):
@@ -52,3 +57,9 @@ class RDMAContext:
         self._rdma_context_c.r_rdma_async(target_addr, self.memory_pool[mr_key].data_ptr() + offset, length, mr_key, rkey, _callback)
 
         await future
+    
+    def get_mr_info(self, mr_key):
+        return MemoryRegionInfo(addr=self.memory_pool[mr_key].data_ptr(), r_key=self._rdma_context_c.get_r_key(mr_key))
+    
+    def register_remote_mr(self, mr_key, mr_info):
+        self.remote_memory_pool[mr_key] = mr_info

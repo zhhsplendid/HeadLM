@@ -62,7 +62,7 @@ psum = requests.post(
         "id":id,
         "mr_key": mr_key,
         "remote_rkey": rdma_ctx._rdma_context_c.get_r_key(mr_key),
-        "length": 1024,
+        "length": 1024 * 1024,
         "offset": 0,
         "remote_addr": rdma_ctx.memory_pool[mr_key].data_ptr()
     }
@@ -75,7 +75,7 @@ psum = requests.post(
         "id":id,
         "mr_key": mr_key,
         "remote_rkey": rdma_ctx._rdma_context_c.get_r_key(mr_key),
-        "length": 1024,
+        "length": 1024 * 1024 * 1024,
         "offset": 0,
         "remote_addr": rdma_ctx.memory_pool[mr_key].data_ptr()
     }

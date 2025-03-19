@@ -21,6 +21,11 @@ class TransferEngine:
         if session_id not in self.links:
             raise KeyError(f"session_id {id} not in links")
         self.links[session_id].register_mr(mr_key, length, device=device)
+    
+    def register_torch(self, session_id, mr_key, t):
+        if session_id not in self.links:
+            raise KeyError(f"session_id {id} not in links")
+        self.links[session_id].register_torch(mr_key, t)
 
     def construct(self, id, local_info: RDMAInfo):
         if id not in self.links:
