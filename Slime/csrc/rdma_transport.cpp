@@ -99,6 +99,17 @@ void RDMAContext::cq_poll_handle() {
   }
 }
 
+int64_t
+RDMAContext::batch_r_rdma_async(const std::vector<uintptr_t> &target_addrs,
+                                const std::vector<uintptr_t> &source_addrs,
+                                const std::vector<uint64_t> &lengths,
+                                const std::vector<std::string> &mr_keys,
+                                const std::vector<int64_t> remote_keys,
+                                std::function<void(unsigned int)> callback) {
+  throw std::runtime_error("NotImplementedError");
+  return 0;
+}
+
 int64_t RDMAContext::r_rdma_async(uintptr_t target_addr, uintptr_t source_addr,
                                   uint64_t length, std::string mr_key,
                                   int64_t remote_rkey,

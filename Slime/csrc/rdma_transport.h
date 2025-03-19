@@ -38,12 +38,16 @@ public:
                        uint64_t length, std::string mr_key, int64_t remote_rkey,
                        std::function<void(unsigned int)> callback);
 
-  int64_t batch_r_rdma_async() {
-    throw std::runtime_error("NotImplementedError");
-  }
+  int64_t batch_r_rdma_async(const std::vector<uintptr_t> &target_addrs,
+                             const std::vector<uintptr_t> &source_addrs,
+                             const std::vector<uint64_t> &lengths,
+                             const std::vector<std::string> &mr_keys,
+                             const std::vector<int64_t> remote_keys,
+                             std::function<void(unsigned int)> callback);
 
   /* Completion Queue Polling */
   void cq_poll_handle();
+
   void launch_cq_future();
   void stop_cq_future();
 
