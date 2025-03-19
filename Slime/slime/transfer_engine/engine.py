@@ -38,10 +38,10 @@ class TransferEngine:
         local_info = self.links[session_id].get_local_info()
         return local_info
     
-    async def r_rdma_async(self, session_id, mr_key, target_addr, offset, length, rkey):
+    async def r_rdma_async(self, session_id, mr_key, target_offset, source_offset, length, rkey):
         if session_id not in self.links:
             raise KeyError(f"session_id {session_id} not in links")
-        await self.links[session_id].r_rdma_async(mr_key, target_addr, offset, length, rkey)
+        await self.links[session_id].r_rdma_async(mr_key, target_offset, source_offset, length, rkey)
         
     def stop_link(self, session_id: int):
         if session_id not in self.links:

@@ -47,13 +47,17 @@ class RDMAContext:
             mtu = local_info.mtu
         )
 
-    async def r_rdma_async(self, mr_key, target_addr, offset, length, rkey):
+    async def r_rdma_async(self, mr_key, target_offset, source_offset, length, rkey):
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         def _callback(code):
             loop.call_soon_threadsafe(future.set_result, code)
 
-        self._rdma_context_c.r_rdma_async(target_addr, self.memory_pool[mr_key].data_ptr() + offset, length, mr_key, rkey, _callback)
+        self._rdma_context_c.r_rdma_async(
+            self.remote_memory_pool[mr_key].addr + target_offset,
+            self.memory_pool[mr_key].data_ptr() + source_offset,
+            length, mr_key, rkey, _callback
+        )
 
         await future
     
