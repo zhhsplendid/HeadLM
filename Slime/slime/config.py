@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, List
 from pydantic import BaseModel
 
 
@@ -13,3 +13,8 @@ class RDMAInfo(BaseModel):
     qpn: int
     psn: int
     mtu: int
+
+
+class ExchangeInfo(BaseModel):
+    rdma_info: RDMAInfo
+    mr_info: List[MemoryRegionInfo]
