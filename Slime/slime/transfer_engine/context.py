@@ -50,6 +50,8 @@ class RDMAContext:
     async def r_rdma_async(self, mr_key, target_offset, source_offset, length, rkey):
         loop = asyncio.get_running_loop()
         future = loop.create_future()
+        print(self.remote_memory_pool[mr_key].addr + target_offset)
+        print(self.remote_memory_pool[mr_key].r_key)
         def _callback(code):
             loop.call_soon_threadsafe(future.set_result, code)
 
@@ -61,8 +63,11 @@ class RDMAContext:
 
         await future
     
-    def get_mr_info(self, mr_key):
+    def get_mr_info(self, mr_key) -> MemoryRegionInfo:
         return MemoryRegionInfo(addr=self.memory_pool[mr_key].data_ptr(), r_key=self._rdma_context_c.get_r_key(mr_key))
+    
+    def get_remote_mr_info(self, mr_key) -> MemoryRegionInfo:
+        return self.remote_memory_pool[mr_key]
     
     def register_remote_mr(self, mr_key, mr_info: MemoryRegionInfo):
         self.remote_memory_pool[mr_key] = mr_info
