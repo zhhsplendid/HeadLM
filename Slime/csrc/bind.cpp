@@ -16,6 +16,7 @@ PYBIND11_MODULE(_slime_c, m) {
       .def("launch_cq_future", &slime::RDMAContext::launch_cq_future)
       .def("stop_cq_future", &slime::RDMAContext::stop_cq_future)
       .def("r_rdma_async", &slime::RDMAContext::r_rdma_async, py::call_guard<py::gil_scoped_release>(), "Read remote memory asynchronously")
+      .def("batch_r_rdma_async", &slime::RDMAContext::batch_r_rdma_async, py::call_guard<py::gil_scoped_release>(), "Read remote memory asynchronously")
       .def("modify_qp_to_rtsr", &slime::RDMAContext::modify_qp_to_rtsr)
       .def("get_local_rdma_info", &slime::RDMAContext::get_local_rdma_info)
       .def("get_r_key", &slime::RDMAContext::getRKey);

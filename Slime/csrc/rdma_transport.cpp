@@ -104,9 +104,53 @@ RDMAContext::batch_r_rdma_async(const std::vector<uintptr_t> &target_addrs,
                                 const std::vector<uintptr_t> &source_addrs,
                                 const std::vector<uint64_t> &lengths,
                                 const std::vector<std::string> &mr_keys,
-                                const std::vector<int64_t> remote_keys,
+                                const std::vector<int64_t> remote_rkeys,
                                 std::function<void(unsigned int)> callback) {
-  throw std::runtime_error("NotImplementedError");
+  auto *call_back_info = new read_info([callback](unsigned int code) { callback(code); });
+  int batch_size = target_addrs.size();
+
+  struct ibv_send_wr* batch_wr_head = NULL;
+  struct ibv_send_wr* cur_wr = NULL;
+  struct ibv_send_wr *bad_wr = NULL;
+  for (int i = 0; i < batch_size; ++i) {
+    struct ibv_sge sge;
+    memset(&sge, 0, sizeof(sge));
+    sge.addr = source_addrs[i];
+    sge.length = lengths[i];
+    sge.lkey = memory_region_[mr_keys[i]]->lkey;
+
+    struct ibv_send_wr *wr = NULL;
+    wr = (ibv_send_wr *) malloc(sizeof(ibv_send_wr));
+    memset(wr, 0, sizeof(ibv_send_wr));
+
+    wr->wr_id = (uintptr_t)call_back_info;
+    wr->opcode = IBV_WR_RDMA_READ;
+    wr->sg_list = &sge;
+    wr->num_sge = 1;
+    wr->send_flags = IBV_SEND_SIGNALED;
+    wr->wr.rdma.remote_addr = target_addrs[i];
+    wr->wr.rdma.rkey = remote_rkeys[i];
+
+    if (batch_wr_head == NULL) {
+      batch_wr_head = wr;
+    }
+    if (cur_wr != NULL) {
+      cur_wr->next = wr;
+    }
+    cur_wr = wr;
+  }
+
+  int ret = 0;
+  {
+    std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
+    ret = ibv_post_send(qp_, batch_wr_head, &bad_wr);
+  }
+
+  if (ret) {
+    SLIME_ABORT("Failed to post RDMA send : " << strerror(ret));
+    return -1;
+  }
+
   return 0;
 }
 
