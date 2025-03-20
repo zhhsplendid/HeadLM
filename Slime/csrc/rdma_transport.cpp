@@ -82,13 +82,15 @@ void RDMAContext::cq_poll_handle() {
     while (ibv_poll_cq(cq_, 1, &wc) > 0) {
       if (wc.status == IBV_WC_SUCCESS) {
         std::cout << "RDMA READ completed successfully." << std::endl;
-        wr_info_base *ptr = reinterpret_cast<wr_info_base *>(wc.wr_id);
-        if (ptr->get_wr_type() == WrType::RDMA_READ_ACK) {
-          SLIME_LOG_DEBUG("read cache done: Received IMM, imm_data: ",
-                          wc.imm_data);
-          auto *info = reinterpret_cast<read_info *>(ptr);
-          info->callback(wc.imm_data);
-          delete info;
+        if (wc.wr_id != 0) {
+          wr_info_base *ptr = reinterpret_cast<wr_info_base *>(wc.wr_id);
+          if (ptr->get_wr_type() == WrType::RDMA_READ_ACK) {
+            SLIME_LOG_DEBUG("read cache done: Received IMM, imm_data: ",
+                            wc.imm_data);
+            auto *info = reinterpret_cast<read_info *>(ptr);
+            info->callback(wc.imm_data);
+            delete info;
+          }
         }
 
       } else {
@@ -123,7 +125,7 @@ RDMAContext::batch_r_rdma_async(const std::vector<uintptr_t> &target_addrs,
     wr = (ibv_send_wr *) malloc(sizeof(ibv_send_wr));
     memset(wr, 0, sizeof(ibv_send_wr));
 
-    wr->wr_id = (uintptr_t)call_back_info;
+    wr->wr_id = 0;
     wr->opcode = IBV_WR_RDMA_READ;
     wr->sg_list = &sge;
     wr->num_sge = 1;
@@ -138,6 +140,12 @@ RDMAContext::batch_r_rdma_async(const std::vector<uintptr_t> &target_addrs,
       cur_wr->next = wr;
     }
     cur_wr = wr;
+  }
+  
+  if (cur_wr != NULL) {
+    // Only call the callback at the last wr
+    cur_wr->wr_id = (uintptr_t)call_back_info;
+    cur_wr->next = NULL;
   }
 
   int ret = 0;
@@ -271,7 +279,7 @@ int64_t RDMAContext::registerMemoryRegion(std::string mem_key, int64_t addr,
 
   ibv_mr *mr = ibv_reg_mr(pd_, (void *)addr, length, access_rights);
 
-  SLIME_ASSERT(mr, "Failed to register memory" << addr);
+  SLIME_ASSERT(mr, " Failed to register memory " << addr);
 
   SLIME_LOG_INFO("Memory region: "
                  << (void *)addr << " -- " << (void *)((uintptr_t)addr + length)

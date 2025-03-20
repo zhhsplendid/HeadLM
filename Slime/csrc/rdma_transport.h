@@ -55,7 +55,7 @@ public:
   rdma_info_t get_remote_rdma_info() { return remote_rdma_info_; }
 
   /* Add a memory pool management */
-  uint32_t getLKey(std::string mr_key) { return memory_region_[mr_key]->rkey; }
+  uint32_t getLKey(std::string mr_key) { return memory_region_[mr_key]->lkey; }
   uint32_t getRKey(std::string mr_key) { return memory_region_[mr_key]->rkey; }
 
 private:
