@@ -66,7 +66,7 @@ async def test_batch_r_rdma_async():
     recv_socket.bind("tcp://localhost:1212")
 
     batch_size = 2
-    x = [torch.ones([5, 5], device="cuda") * i for i in range(batch_size)]
+    x = [torch.zeros([5, 5], device="cuda") * i for i in range(batch_size)]
 
     ctx = _slime_c.rdma_context()
 

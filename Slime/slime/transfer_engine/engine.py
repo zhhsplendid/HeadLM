@@ -1,3 +1,6 @@
+import torch
+import future
+
 from typing import Dict, Tuple
 
 from .context import RDMAContext
@@ -37,11 +40,35 @@ class TransferEngine:
             raise KeyError(f"session_id {session_id} not in links")
         local_info = self.links[session_id].get_local_info()
         return local_info
-    
+
     async def r_rdma_async(self, session_id, mr_key, target_offset, source_offset, length):
         if session_id not in self.links:
             raise KeyError(f"session_id {session_id} not in links")
         await self.links[session_id].r_rdma_async(mr_key, target_offset, source_offset, length)
+ 
+
+    async def send_tensor(tensor: torch.Tensor,
+                           send_indices: list[int],
+                           receiver_indices: list[int]
+                           host: str,
+                           port: int): -> future
+        # gather, register mr
+        # tcp receiver send meta
+        
+
+
+    
+    async def receive_tensors(tensors:torch.Tensor, machine_info): -> future()
+        receive_indices
+        # tcp receive meta
+        # rdma read whole
+        # whole -> scatter -> list[torch.Tensor] -> write
+
+
+
+
+    
+
         
     def stop_link(self, session_id: int):
         if session_id not in self.links:
