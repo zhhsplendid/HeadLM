@@ -74,7 +74,7 @@ class TransferEngine:
         buffer_tensor = torch.gather(tensor, dim=0, index=expend_send_index)
 
         #
-        # Regist the gather tensor on MR
+        # Register the gather tensor on MR
         #
         rdma_link = self.links[session_id]
         mr_key = str(buffer_tensor.data_ptr())
@@ -82,8 +82,9 @@ class TransferEngine:
 
         loop = asyncio.get_running_loop()
         future = loop.create_future()
+
         #
-        # Rcp send meta
+        # Tcp send meta
         #
         zmq_ctx = zmq.Context(2)
         send_socket = zmq_ctx.socket(zmq.PUSH)
@@ -101,7 +102,6 @@ class TransferEngine:
         return future
 
     async def buffered_receive_tensor(self, session_id: int, out_tensor: torch.Tensor,
-                              buffer_tensor: torch.Tensor,
                               receiver_indices: List[int], remote_host: str,
                               remote_port: int, local_port: int):
         """
@@ -110,6 +110,18 @@ class TransferEngine:
 
         if session_id not in self.links:
             raise KeyError(f"session_id {session_id} not in links")
+
+        #
+        # Regist the buffer tensor on MR
+        #
+        rdma_link = self.links[session_id]
+        buffer_shape = (len(receiver_indices), ) + out_tensor.shape[1:]
+        buffer_tensor = torch.zeros(buffer_shape, device=out_tensor.device, dtype=out_tensor.dtype)
+        mr_key = str(buffer_tensor.data_ptr())
+        rdma_link.register_torch(mr_key, buffer_tensor)
+
+        
+        
 
         #
         # tcp exchange meta
@@ -121,18 +133,10 @@ class TransferEngine:
         recv_socket.bind(f"tcp://localhost:{local_port}")
 
         remote_rdma_info, remote_mr_info = recv_socket.recv_pyobj()
-
-        #
-        # Regist the buffer tensor on MR
-        #
-        rdma_link = self.links[session_id]
-        mr_key = str(buffer_tensor.data_ptr())
-        rdma_link.register_torch(mr_key, buffer_tensor)
-        rdma_link.register_remote_mr(mr_key, remote_mr_info)
-
         local_rdma_info = rdma_link.get_local_info()
         local_mr_info = rdma_link.get_mr_info(mr_key)
         send_socket.send_pyobj([local_rdma_info, local_mr_info])
+        rdma_link.register_remote_mr(mr_key, remote_mr_info)
         rdma_link.construct(remote_rdma_info)
 
         #
