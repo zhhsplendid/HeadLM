@@ -1,9 +1,8 @@
 import asyncio
 import torch
-import future
 import zmq
 
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 from .context import RDMAContext
 
@@ -53,9 +52,9 @@ class TransferEngine:
         await self.links[session_id].r_rdma_async(mr_key, target_offset,
                                                   source_offset, length)
 
-    async def send_tensor(self, session_id: int, tensor: torch.Tensor,
-                          send_indices: list[int], remote_host: str,
-                          remote_port: int, local_port: int) -> future:
+    async def buffered_send_tensor(self, session_id: int, tensor: torch.Tensor,
+                          send_indices: List[int], remote_host: str,
+                          remote_port: int, local_port: int):
         """
         Sender gather tensor into a buffer tensor based on send_indices, then sent rdma infos through tcp to receiver.
         Receiver can read it after have those info.
@@ -67,7 +66,7 @@ class TransferEngine:
         #
         # Gather tensors based on indices
         #
-        send_index_tensor = torch.Tensor(send_indices)
+        send_index_tensor = torch.tensor(send_indices, dtype=torch.int64, device=tensor.device)
         # Reshape and expand the indices to match tensor's dimensions
         expend_send_index = send_index_tensor.view(
             -1, *([1] * (tensor.dim() - 1))).expand(-1, *tensor.shape[1:])
@@ -81,6 +80,8 @@ class TransferEngine:
         mr_key = str(buffer_tensor.data_ptr())
         rdma_link.register_torch(mr_key, buffer_tensor)
 
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
         #
         # Rcp send meta
         #
@@ -96,10 +97,13 @@ class TransferEngine:
         remote_rdma_info, remote_mr_info = recv_socket.recv_pyobj()
         rdma_link.construct(remote_rdma_info)
 
-    async def receive_tensors(self, session_id: int, out_tensor: torch.Tensor,
+        future.set_result(0)
+        return future
+
+    async def buffered_receive_tensor(self, session_id: int, out_tensor: torch.Tensor,
                               buffer_tensor: torch.Tensor,
-                              receiver_indices: list[int], remote_host: str,
-                              remote_port: int, local_port: int) -> future:
+                              receiver_indices: List[int], remote_host: str,
+                              remote_port: int, local_port: int):
         """
         Receiver read the remote buffer tensor to local buffer tensor, then scatter it to out_tensor.
         """
@@ -142,7 +146,7 @@ class TransferEngine:
                 #
                 # Scatter tensors based on indices
                 #
-                receive_index_tensor = torch.Tensor(receiver_indices)
+                receive_index_tensor = torch.tensor(receiver_indices, dtype=torch.int64, device=out_tensor.device)
                 # Reshape and expand the indices to match tensor's dimensions
                 expend_receive_index = receive_index_tensor.view(
                     -1, *([1] * (buffer_tensor.dim() - 1))).expand(
@@ -155,9 +159,9 @@ class TransferEngine:
                 loop.call_soon_threadsafe(future.set_result, code)
             else:
                 loop.call_soon_threadsafe(future.set_exception, code)
-
-        rdma_link.r_rdma_async(mr_key, 0, 0, remote_mr_info.offset,
-                               _scatter_callback)
+        read_len = buffer_tensor.numel() * buffer_tensor.itemsize
+        await rdma_link.r_rdma_async(mr_key, remote_mr_info.offset, local_mr_info.offset, read_len, _scatter_callback)
+        return future
 
     def stop_link(self, session_id: int):
         if session_id not in self.links:

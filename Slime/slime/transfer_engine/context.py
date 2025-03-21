@@ -64,21 +64,25 @@ class RDMAContext:
         print(self.remote_memory_pool[mr_key].addr + target_offset)
         print(self.remote_memory_pool[mr_key].r_key)
 
+        rdma_call_back = None
         if callback is None:
             loop = asyncio.get_running_loop()
             future = loop.create_future()
 
-            def _callback(code):
+            def _default_callback(code):
                 loop.call_soon_threadsafe(future.set_result, code)
 
-            callback = _callback
+            rdma_call_back = _default_callback
+        else:
+            rdma_call_back = callback
 
         self._rdma_context_c.r_rdma_async(
             self.remote_memory_pool[mr_key].addr + target_offset,
             self.memory_pool[mr_key].data_ptr() + source_offset, length,
-            mr_key, self.remote_memory_pool[mr_key].r_key, callback)
+            mr_key, self.remote_memory_pool[mr_key].r_key, rdma_call_back)
 
-        await future
+        if callback is None:
+            await future
 
     def get_mr_info(self, mr_key) -> MemoryRegionInfo:
         return MemoryRegionInfo(
