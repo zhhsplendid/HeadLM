@@ -11,7 +11,7 @@ from slime.config import RDMAInfo, ExchangeInfo
 
 class TransferEngine:
 
-    def __init__(self, dev_name: str, ib_port: int, link_type="Ethernet"):
+    def __init__(self, dev_name: str, ib_port: int = 1, link_type:str = "Ethernet"):
         self.dev_name = dev_name
         self.ib_port = ib_port
         self.link_type = link_type
@@ -53,7 +53,7 @@ class TransferEngine:
                                                   source_offset, length)
 
     async def buffered_send_tensor(self, session_id: int, tensor: torch.Tensor,
-                          send_indices: List[int], remote_host: str,
+                          send_indices: List[int], remote_host: str, local_host: str, 
                           remote_port: int, local_port: int):
         """
         Sender gather tensor into a buffer tensor based on send_indices, then sent rdma infos through tcp to receiver.
@@ -90,7 +90,7 @@ class TransferEngine:
         send_socket = zmq_ctx.socket(zmq.PUSH)
         send_socket.connect(f"tcp://{remote_host}:{remote_port}")
         recv_socket = zmq_ctx.socket(zmq.PULL)
-        recv_socket.bind(f"tcp://localhost:{local_port}")
+        recv_socket.bind(f"tcp://{local_host}:{local_port}")
 
         local_rdma_info = rdma_link.get_local_info()
         local_mr_info = rdma_link.get_mr_info(mr_key)
@@ -102,7 +102,7 @@ class TransferEngine:
         return future
 
     async def buffered_receive_tensor(self, session_id: int, out_tensor: torch.Tensor,
-                              receiver_indices: List[int], remote_host: str,
+                              receiver_indices: List[int], remote_host: str, local_host: str,
                               remote_port: int, local_port: int):
         """
         Receiver read the remote buffer tensor to local buffer tensor, then scatter it to out_tensor.
@@ -130,7 +130,7 @@ class TransferEngine:
         send_socket = zmq_ctx.socket(zmq.PUSH)
         send_socket.connect(f"tcp://{remote_host}:{remote_port}")
         recv_socket = zmq_ctx.socket(zmq.PULL)
-        recv_socket.bind(f"tcp://localhost:{local_port}")
+        recv_socket.bind(f"tcp://{local_host}:{local_port}")
 
         remote_rdma_info, remote_mr_info = recv_socket.recv_pyobj()
         local_rdma_info = rdma_link.get_local_info()
