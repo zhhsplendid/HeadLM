@@ -129,10 +129,10 @@ class TransferEngine:
         recv_socket = zmq_ctx.socket(zmq.PULL)
         recv_socket.bind(f"tcp://*:{local_port}")
 
-        remote_rdma_info, remote_mr_info = recv_socket.recv_pyobj()
         local_rdma_info = rdma_link.get_local_info()
         local_mr_info = rdma_link.get_mr_info(mr_key)
         send_socket.send_pyobj([local_rdma_info, local_mr_info])
+        remote_rdma_info, remote_mr_info = recv_socket.recv_pyobj()
         rdma_link.register_remote_mr(mr_key, remote_mr_info)
         rdma_link.construct(remote_rdma_info)
 
