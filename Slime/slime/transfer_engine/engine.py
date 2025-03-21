@@ -53,7 +53,7 @@ class TransferEngine:
                                                   source_offset, length)
 
     async def buffered_send_tensor(self, session_id: int, tensor: torch.Tensor,
-                          send_indices: List[int], remote_host: str, local_host: str, 
+                          send_indices: List[int], remote_host: str,
                           remote_port: int, local_port: int):
         """
         Sender gather tensor into a buffer tensor based on send_indices, then sent rdma infos through tcp to receiver.
@@ -90,7 +90,7 @@ class TransferEngine:
         send_socket = zmq_ctx.socket(zmq.PUSH)
         send_socket.connect(f"tcp://{remote_host}:{remote_port}")
         recv_socket = zmq_ctx.socket(zmq.PULL)
-        recv_socket.bind(f"tcp://{local_host}:{local_port}")
+        recv_socket.bind(f"tcp://*:{local_port}")
 
         local_rdma_info = rdma_link.get_local_info()
         local_mr_info = rdma_link.get_mr_info(mr_key)
@@ -102,7 +102,7 @@ class TransferEngine:
         return future
 
     async def buffered_receive_tensor(self, session_id: int, out_tensor: torch.Tensor,
-                              receiver_indices: List[int], remote_host: str, local_host: str,
+                              receiver_indices: List[int], remote_host: str,
                               remote_port: int, local_port: int):
         """
         Receiver read the remote buffer tensor to local buffer tensor, then scatter it to out_tensor.
@@ -120,9 +120,6 @@ class TransferEngine:
         mr_key = str(buffer_tensor.data_ptr())
         rdma_link.register_torch(mr_key, buffer_tensor)
 
-        
-        
-
         #
         # tcp exchange meta
         #
@@ -130,7 +127,7 @@ class TransferEngine:
         send_socket = zmq_ctx.socket(zmq.PUSH)
         send_socket.connect(f"tcp://{remote_host}:{remote_port}")
         recv_socket = zmq_ctx.socket(zmq.PULL)
-        recv_socket.bind(f"tcp://{local_host}:{local_port}")
+        recv_socket.bind(f"tcp://*:{local_port}")
 
         remote_rdma_info, remote_mr_info = recv_socket.recv_pyobj()
         local_rdma_info = rdma_link.get_local_info()
