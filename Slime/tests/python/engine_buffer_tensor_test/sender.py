@@ -17,7 +17,7 @@ async def main(args):
     engine = TransferEngine(args.device)
     session_id = 0
     engine.init_link(session_id)
-    future = engine.buffered_send_tensor(session_id, test_tensor, send_indices, args.host, args.host, args.remote_port, args.port)
+    future = engine.buffered_send_tensor(session_id, test_tensor, send_indices, args.remote_host, args.remote_port, args.port)
     await future
     print(test_tensor)
     engine.stop_link(session_id)
@@ -25,7 +25,6 @@ async def main(args):
 
 if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="mlx5_bond_0")
-    parser.add_argument("--host", type=str, default="localhost")
     parser.add_argument("--port", type=int, default=3344)
     parser.add_argument("--remote-host", type=str, default="localhost")
     parser.add_argument("--remote-port", type=str, default=4433)
