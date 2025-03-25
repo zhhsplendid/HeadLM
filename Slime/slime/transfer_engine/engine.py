@@ -1,4 +1,5 @@
 import asyncio
+import time
 import torch
 import zmq
 
@@ -63,6 +64,7 @@ class TransferEngine:
         if session_id not in self.links:
             raise KeyError(f"session_id {session_id} not in links")
 
+        start_time = time.time()
         #
         # Gather tensors based on indices
         #
@@ -72,6 +74,10 @@ class TransferEngine:
             -1, *([1] * (tensor.dim() - 1))).expand(-1, *tensor.shape[1:])
         # Gather the elements along dim=0
         buffer_tensor = torch.gather(tensor, dim=0, index=expend_send_index)
+        torch.cuda.synchronize()
+        end_time = time.time()
+        duration = end_time - start_time
+        print(f"Gather duration time = {duration} s")
 
         #
         # Register the gather tensor on MR
