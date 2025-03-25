@@ -19,7 +19,6 @@ class TransferEngine:
         self.links: Dict[int, RDMAContext] = {}
         self.link_exchange_sockets: Dict[int, Tuple] = {}
         self.link_buffer_mr_key: Dict[int, str] = {}
-        self.link_remote_mr_key: Dict[int, str] = {}
 
     def init_link(self,
                   session_id: int,
@@ -54,9 +53,7 @@ class TransferEngine:
         send_socket.send_pyobj([local_rdma_info, local_mr_info])
         remote_rdma_info, remote_mr_info = recv_socket.recv_pyobj()
         rdma_link.construct(remote_rdma_info)
-        remote_mr_key = str(remote_mr_info.addr)
-        rdma_link.register_remote_mr(remote_mr_key, remote_mr_info)
-        self.link_remote_mr_key[session_id] = remote_mr_key
+        rdma_link.register_remote_mr(mr_key, remote_mr_info)
 
     def register_mr(self, session_id, mr_key, length, device="cpu"):
         if session_id not in self.links:
@@ -140,15 +137,15 @@ class TransferEngine:
         rdma_link = self.links[session_id]
         
         
-        local_mr_key = self.link_buffer_mr_key[session_id]
-        buffer_tensor = rdma_link.get_mem_pool_tensor(local_mr_key)
+        mr_key = self.link_buffer_mr_key[session_id]
+        buffer_tensor = rdma_link.get_mem_pool_tensor(mr_key)
         buffer_tensor = buffer_tensor.view(-1, *out_tensor.shape[1:])
 
         start_time = time.time()
         send_socket, recv_socket = self.link_exchange_sockets[session_id]
         ready_sign = recv_socket.recv_pyobj()
 
-        local_mr_info = rdma_link.get_mr_info(local_mr_key)
+        local_mr_info = rdma_link.get_mr_info(mr_key)
         remote_mr_info = rdma_link.get_remote_mr_info(self.link_remote_mr_key[session_id])
 
         end_time = time.time()
@@ -187,7 +184,7 @@ class TransferEngine:
         
         read_len = buffer_tensor.numel() * buffer_tensor.itemsize
         start_time = time.time()
-        await rdma_link.r_rdma_async(local_mr_key, remote_mr_info.offset, local_mr_info.offset, read_len, _scatter_callback)
+        await rdma_link.r_rdma_async(mr_key, remote_mr_info.offset, local_mr_info.offset, read_len, _scatter_callback)
         await future
         end_time = time.time()
         duration = end_time - start_time
