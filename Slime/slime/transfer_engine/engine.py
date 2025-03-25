@@ -146,7 +146,7 @@ class TransferEngine:
         ready_sign = recv_socket.recv_pyobj()
 
         local_mr_info = rdma_link.get_mr_info(mr_key)
-        remote_mr_info = rdma_link.get_remote_mr_info(self.link_remote_mr_key[session_id])
+        remote_mr_info = rdma_link.get_remote_mr_info(mr_key)
 
         end_time = time.time()
         duration = end_time - start_time
