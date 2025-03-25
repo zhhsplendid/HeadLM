@@ -17,14 +17,16 @@ async def main(args):
 
     engine = TransferEngine(args.device, ib_port=1)
     session_id = 0
-    engine.init_link(session_id, args.remote_host, args.remote_port, args.port)
+    buffer_shape = [len(recv_indices)] + test_shape[1:]
+    buffer_tensor = torch.zeros(buffer_shape, device=test_tensor.device, dtype=test_tensor.dtype)
+    engine.init_link(session_id, buffer_tensor, args.remote_host, args.remote_port, args.port)
 
     start_time = time.time()
     await engine.buffered_receive_tensor(session_id, test_tensor, recv_indices)
     end_time = time.time()
     
     duration = end_time - start_time
-    buffer_shape = [len(recv_indices)] + test_shape[1:]
+    
     num_elem = 1
     for s in buffer_shape:
         num_elem *= s
