@@ -136,13 +136,11 @@ class TransferEngine:
 
         rdma_link = self.links[session_id]
         
-        
         mr_key = self.link_buffer_mr_key[session_id]
         buffer_tensor = rdma_link.get_mem_pool_tensor(mr_key)
         buffer_tensor = buffer_tensor.view(-1, *out_tensor.shape[1:])
-        local_mr_info = rdma_link.get_mr_info(local_mr_key)
-        remote_mr_key = self.link_remote_mr_key[session_id]
-        remote_mr_info = rdma_link.get_remote_mr_info(remote_mr_key)
+        local_mr_info = rdma_link.get_mr_info(mr_key)
+        remote_mr_info = rdma_link.get_remote_mr_info(mr_key)
 
         start_time = time.time()
         send_socket, recv_socket = self.link_exchange_sockets[session_id]
