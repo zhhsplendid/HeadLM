@@ -28,7 +28,7 @@ class RDMAContext:
         return self._rdma_context_c.init_rdma_context(dev_name, ib_port,
                                                       link_type)
 
-    def register_mr(self, mr_key, length: int, device="cpu"):
+    def register_mr(self, mr_key, length: int):
         t = torch.zeros((length, ), dtype=torch.uint8, requires_grad=False)
         self._rdma_context_c.register_memory_region(mr_key, t.data_ptr(),
                                                     length)
@@ -83,6 +83,9 @@ class RDMAContext:
 
         if callback is None:
             await future
+
+    def get_mem_pool_tensor(self, mr_key):
+        return self.memory_pool[mr_key]
 
     def get_mr_info(self, mr_key) -> MemoryRegionInfo:
         return MemoryRegionInfo(
