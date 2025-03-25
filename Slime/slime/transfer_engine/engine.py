@@ -17,13 +17,25 @@ class TransferEngine:
         self.ib_port = ib_port
         self.link_type = link_type
         self.links: Dict[int, RDMAContext] = {}
+        self.link_exchange_sockets: Dict[int, Tuple] = {}
 
-    def init_link(self, session_id: int):
+    def init_link(self,
+                  session_id: int,
+                  remote_host: str,
+                  remote_port: int,
+                  local_port: int):
         if session_id in self.links:
             raise KeyError(f"session_id {session_id} already in links")
         self.links[session_id] = RDMAContext(dev_name=self.dev_name,
                                              ib_port=self.ib_port,
                                              link_type=self.link_type)
+        zmq_ctx = zmq.Context(2)
+        send_socket = zmq_ctx.socket(zmq.PUSH)
+        send_socket.connect(f"tcp://{remote_host}:{remote_port}")
+        recv_socket = zmq_ctx.socket(zmq.PULL)
+        recv_socket.bind(f"tcp://*:{local_port}")
+        self.link_exchange_sockets[session_id] = (send_socket, recv_socket)
+        
 
     def register_mr(self, session_id, mr_key, length, device="cpu"):
         if session_id not in self.links:
@@ -54,8 +66,7 @@ class TransferEngine:
                                                   source_offset, length)
 
     async def buffered_send_tensor(self, session_id: int, tensor: torch.Tensor,
-                          send_indices: List[int], remote_host: str,
-                          remote_port: int, local_port: int):
+                          send_indices: List[int]):
         """
         Sender gather tensor into a buffer tensor based on send_indices, then sent rdma infos through tcp to receiver.
         Receiver can read it after have those info.
@@ -87,12 +98,7 @@ class TransferEngine:
         #
         # Tcp send meta
         #
-        zmq_ctx = zmq.Context(2)
-        send_socket = zmq_ctx.socket(zmq.PUSH)
-        send_socket.connect(f"tcp://{remote_host}:{remote_port}")
-        recv_socket = zmq_ctx.socket(zmq.PULL)
-        recv_socket.bind(f"tcp://*:{local_port}")
-
+        send_socket, recv_socket = self.link_exchange_sockets[session_id]
         local_rdma_info = rdma_link.get_local_info()
         local_mr_info = rdma_link.get_mr_info(mr_key)
         send_socket.send_pyobj([local_rdma_info, local_mr_info])
@@ -103,8 +109,7 @@ class TransferEngine:
         return future
 
     async def buffered_receive_tensor(self, session_id: int, out_tensor: torch.Tensor,
-                              receiver_indices: List[int], remote_host: str,
-                              remote_port: int, local_port: int):
+                              receiver_indices: List[int]):
         """
         Receiver read the remote buffer tensor to local buffer tensor, then scatter it to out_tensor.
         """
@@ -129,12 +134,7 @@ class TransferEngine:
         # tcp exchange meta
         #
         start_time = time.time()
-        zmq_ctx = zmq.Context(2)
-        send_socket = zmq_ctx.socket(zmq.PUSH)
-        send_socket.connect(f"tcp://{remote_host}:{remote_port}")
-        recv_socket = zmq_ctx.socket(zmq.PULL)
-        recv_socket.bind(f"tcp://*:{local_port}")
-
+        send_socket, recv_socket = self.link_exchange_sockets[session_id]
         local_rdma_info = rdma_link.get_local_info()
         local_mr_info = rdma_link.get_mr_info(mr_key)
         send_socket.send_pyobj([local_rdma_info, local_mr_info])
@@ -166,6 +166,7 @@ class TransferEngine:
                 out_tensor.scatter_(dim=0,
                                     index=expend_receive_index,
                                     src=buffer_tensor)
+                torch.cuda.synchronize()
                 # Success, we should run call back
                 end_time = time.time()
                 duration = end_time - start_time
