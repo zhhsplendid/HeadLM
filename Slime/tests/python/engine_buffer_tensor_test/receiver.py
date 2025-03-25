@@ -1,5 +1,6 @@
 import asyncio
 import torch
+import time
 
 from slime.transfer_engine.engine import TransferEngine
 
@@ -14,12 +15,25 @@ async def main(args):
     recv_indices = args.indices
     test_tensor = torch.zeros(test_shape, device="cuda", dtype=torch.float32)
 
-    engine = TransferEngine(args.device)
+    engine = TransferEngine(args.device, ib_port=1)
     session_id = 0
     engine.init_link(session_id)
-    future = engine.buffered_receive_tensor(session_id, test_tensor, recv_indices, args.remote_host, args.remote_port, args.port)
-    await future
-    print(test_tensor)
+
+    start_time = time.time()
+    await engine.buffered_receive_tensor(session_id, test_tensor, recv_indices, args.remote_host, args.remote_port, args.port)
+    end_time = time.time()
+    
+    duration_ms = end_time - start_time
+    buffer_shape = [len(recv_indices)] + test_shape[1:]
+    num_elem = 1
+    for s in buffer_shape:
+        num_elem *= s
+    total_data_bytes = num_elem * 4 # float32 (4 bytes) is the test dtype
+    total_data_gb = total_data_bytes / (1e9)
+    bandwidth = (total_data_gb) / (duration_ms * 1e6)
+    print(f"Total data size = {total_data_gb} GB, {bandwidth=} GB/s")
+
+    print(torch.sum(test_tensor))
     engine.stop_link(session_id)
 
 
@@ -28,8 +42,8 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=4433)
     parser.add_argument("--remote-host", type=str, default="localhost")
     parser.add_argument("--remote-port", type=str, default=3344)
-    parser.add_argument("--shape", type=int, nargs="+", default=[5, 4])
-    parser.add_argument("--indices", type=int, nargs="+", default=[0, 2, 3])
+    parser.add_argument("--shape", type=int, nargs="+", default=[80,15000,64,1,128])
+    parser.add_argument("--indices", type=int, nargs="+", default=list(range(2)))
     parser.add_argument("--mode", type=str, choices=["batch-send", "send"], default="batch-send")
     args = parser.parse_args()
     asyncio.run(main(args))
