@@ -162,7 +162,9 @@ class TransferEngine:
                 loop.call_soon_threadsafe(future.set_exception, code)
         read_len = buffer_tensor.numel() * buffer_tensor.itemsize
 
+        
         await rdma_link.r_rdma_async(mr_key, remote_mr_info.offset, local_mr_info.offset, read_len, _scatter_callback)
+        
         await future
 
     def stop_link(self, session_id: int):

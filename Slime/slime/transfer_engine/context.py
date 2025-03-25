@@ -93,6 +93,9 @@ class RDMAContext:
     def get_remote_mr_info(self, mr_key) -> MemoryRegionInfo:
         return self.remote_memory_pool[mr_key]
 
+    def register_remote_mr(self, mr_key, mr_info: MemoryRegionInfo):
+        self.remote_memory_pool[mr_key] = mr_info
+
     async def buffered_r_rdma_async(self,
                                     target_offsets: List[int],
                                     source_offsets: List[int],

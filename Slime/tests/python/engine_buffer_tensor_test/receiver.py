@@ -23,14 +23,14 @@ async def main(args):
     await engine.buffered_receive_tensor(session_id, test_tensor, recv_indices, args.remote_host, args.remote_port, args.port)
     end_time = time.time()
     
-    duration_ms = end_time - start_time
+    duration = end_time - start_time
     buffer_shape = [len(recv_indices)] + test_shape[1:]
     num_elem = 1
     for s in buffer_shape:
         num_elem *= s
     total_data_bytes = num_elem * 4 # float32 (4 bytes) is the test dtype
     total_data_gb = total_data_bytes / (1e9)
-    bandwidth = (total_data_gb) / (duration_ms * 1e6)
+    bandwidth = (total_data_gb) / (duration)
     print(f"Total data size = {total_data_gb} GB, {bandwidth=} GB/s")
 
     print(torch.sum(test_tensor))
