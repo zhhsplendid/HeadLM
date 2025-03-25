@@ -14,7 +14,7 @@ async def main(args):
     test_shape = args.shape
     send_indices = args.indices
     #test_tensor = torch.arange(torch.prod(torch.tensor(test_shape)), dtype=torch.float32, device="cuda").view(test_shape)
-    test_tensor = torch.ones(test_shape, dtype=torch.float32, device="cuda")
+    test_tensor = torch.ones(test_shape, dtype=torch.bfloat16, device="cuda")
 
     engine = TransferEngine(args.device)
     session_id = 0
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     parser.add_argument("--remote-host", type=str, default="localhost")
     parser.add_argument("--remote-port", type=str, default=4433)
     parser.add_argument("--shape", type=int, nargs="+", default=[15000,64,1,128])
-    parser.add_argument("--indices", type=int, nargs="+", default=list(range(8000)))
+    parser.add_argument("--indices", type=int, nargs="+", default=list(range(80)))
     parser.add_argument("--mode", type=str, choices=["batch-send", "send"], default="batch-send")
     args = parser.parse_args()
     asyncio.run(main(args))
