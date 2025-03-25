@@ -1,4 +1,5 @@
 import asyncio
+import time
 import torch
 import zmq
 
@@ -114,15 +115,20 @@ class TransferEngine:
         #
         # Regist the buffer tensor on MR
         #
+        start_time = time.time()
         rdma_link = self.links[session_id]
         buffer_shape = (len(receiver_indices), ) + out_tensor.shape[1:]
         buffer_tensor = torch.zeros(buffer_shape, device=out_tensor.device, dtype=out_tensor.dtype)
         mr_key = str(buffer_tensor.data_ptr())
         rdma_link.register_torch(mr_key, buffer_tensor)
+        end_time = time.time()
+        duration = end_time - start_time
+        print(f"register MR takes {duration} s")
 
         #
         # tcp exchange meta
         #
+        start_time = time.time()
         zmq_ctx = zmq.Context(2)
         send_socket = zmq_ctx.socket(zmq.PUSH)
         send_socket.connect(f"tcp://{remote_host}:{remote_port}")
@@ -135,6 +141,9 @@ class TransferEngine:
         remote_rdma_info, remote_mr_info = recv_socket.recv_pyobj()
         rdma_link.register_remote_mr(mr_key, remote_mr_info)
         rdma_link.construct(remote_rdma_info)
+        end_time = time.time()
+        duration = end_time - start_time
+        print(f"Tcp exchange takes {duration} s")
 
         #
         # Do scatter callback once read finish
@@ -147,6 +156,7 @@ class TransferEngine:
                 #
                 # Scatter tensors based on indices
                 #
+                start_time = time.time()
                 receive_index_tensor = torch.tensor(receiver_indices, dtype=torch.int64, device=out_tensor.device)
                 # Reshape and expand the indices to match tensor's dimensions
                 expend_receive_index = receive_index_tensor.view(
@@ -157,15 +167,24 @@ class TransferEngine:
                                     index=expend_receive_index,
                                     src=buffer_tensor)
                 # Success, we should run call back
+                end_time = time.time()
+                duration = end_time - start_time
+                print(f"Scatter takes {duration} s")
                 loop.call_soon_threadsafe(future.set_result, code)
             else:
                 loop.call_soon_threadsafe(future.set_exception, code)
         read_len = buffer_tensor.numel() * buffer_tensor.itemsize
 
-        
+        start_time = time.time()
         await rdma_link.r_rdma_async(mr_key, remote_mr_info.offset, local_mr_info.offset, read_len, _scatter_callback)
-        
         await future
+        end_time = time.time()
+        duration = end_time - start_time
+        total_data_bytes = buffer_tensor.numel() * buffer_tensor.itemsize
+        total_data_gb = total_data_bytes / (1e9)
+        bandwidth = (total_data_gb) / (duration)
+        print(f"Measure only the r_rdma_async data size = {total_data_gb} GB, total time = {duration} s, {bandwidth=} GB/s")
+
 
     def stop_link(self, session_id: int):
         if session_id not in self.links:

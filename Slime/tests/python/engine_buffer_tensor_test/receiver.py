@@ -31,7 +31,7 @@ async def main(args):
     total_data_bytes = num_elem * 4 # float32 (4 bytes) is the test dtype
     total_data_gb = total_data_bytes / (1e9)
     bandwidth = (total_data_gb) / (duration)
-    print(f"Total data size = {total_data_gb} GB, {bandwidth=} GB/s")
+    print(f"Total data size = {total_data_gb} GB, total time = {duration} s, {bandwidth=} GB/s")
 
     print(torch.sum(test_tensor))
     engine.stop_link(session_id)
