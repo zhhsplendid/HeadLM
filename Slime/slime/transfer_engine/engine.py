@@ -36,7 +36,7 @@ class TransferEngine:
         
         mr_key = str(mem_pool_tensor)
         self.link_buffer_mr_key[session_id] = mr_key
-        rdma_link.register_mr(mr_key, mem_pool_tensor)
+        rdma_link.register_torch(mr_key, mem_pool_tensor)
 
         zmq_ctx = zmq.Context(2)
         send_socket = zmq_ctx.socket(zmq.PUSH)
@@ -106,8 +106,12 @@ class TransferEngine:
         mr_key = self.link_buffer_mr_key[session_id]
         buffer_tensor = rdma_link.get_mem_pool_tensor(mr_key)
         buffer_tensor = buffer_tensor.view(-1, *tensor.shape[1:])
+        scatter_index_tensor = torch.arange(len(send_indices), device=buffer_tensor.device)
+        expand_index_tensor = scatter_index_tensor.view(
+                    -1, *([1] * (buffer_tensor.dim() - 1))).expand(
+                        -1, *buffer_tensor.shape[1:])
 
-        buffer_tensor._scatter(0, torch.arange(len(send_indices), device=buffer_tensor.device), tensor[send_indices])
+        buffer_tensor.scatter_(0, expand_index_tensor, tensor[send_indices])
         torch.cuda.synchronize()
         end_time = time.time()
         duration = end_time - start_time
