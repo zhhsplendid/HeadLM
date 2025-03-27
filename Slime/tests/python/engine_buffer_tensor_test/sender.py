@@ -37,7 +37,8 @@ async def main(args):
     bandwidth = (total_data_gb) / (duration)
     print(f"Total data size = {total_data_gb} GB, total time = {duration} s, {bandwidth=} GB/s")
 
-    print(torch.sum(test_tensor) / test_tensor.shape[0] * len(send_indices))
+    #print(torch.sum(test_tensor) / test_tensor.shape[0] * len(send_indices))
+    print(torch.sum(buffer_tensor))
     #print(f"{test_tensor=}")
     #print(f"{buffer_tensor=}")
     engine.stop_link(session_id)
