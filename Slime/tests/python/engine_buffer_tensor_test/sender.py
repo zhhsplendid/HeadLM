@@ -13,8 +13,8 @@ parser = argparse.ArgumentParser("sender")
 async def main(args):
     test_shape = args.shape
     send_indices = args.indices
-    #test_tensor = torch.arange(torch.prod(torch.tensor(test_shape)), dtype=torch.float32, device="cuda").view(test_shape)
-    test_tensor = torch.ones(test_shape, dtype=torch.bfloat16, device="cuda")
+    test_tensor = torch.arange(torch.prod(torch.tensor(test_shape)), dtype=torch.bfloat16, device="cuda").view(test_shape)
+    #test_tensor = torch.ones(test_shape, dtype=torch.bfloat16, device="cuda")
 
     engine = TransferEngine(args.device)
     session_id = 0
@@ -37,7 +37,10 @@ async def main(args):
     bandwidth = (total_data_gb) / (duration)
     print(f"Total data size = {total_data_gb} GB, total time = {duration} s, {bandwidth=} GB/s")
 
-    print(torch.sum(test_tensor) / test_tensor.shape[0] * len(send_indices))
+    #print(torch.sum(test_tensor) / test_tensor.shape[0] * len(send_indices))
+    print(torch.sum(buffer_tensor))
+    #print(f"{test_tensor=}")
+    #print(f"{buffer_tensor=}")
     engine.stop_link(session_id)
 
 
