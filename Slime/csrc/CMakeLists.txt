@@ -1,24 +1,14 @@
-cmake_minimum_required(VERSION 3.10)
+option(BUILD_BENCH   "Build transfer engine benchmark"  OFF)
+option(BUILD_PYTHON  "Build transfer engine benchmark"  ON)
 
-project(slime C CXX CUDA)
+add_subdirectory(ops)
+add_subdirectory(utils)
+add_subdirectory(engine)
 
-include_directories(${PROJECT_SOURCE_DIR})
+if (BUILD_PYTHON)
+add_subdirectory(python)
+endif (BUILD_PYTHON)
 
-add_library(
-    slime
-    SHARED
-    transfer_engine.cpp
-    rdma_transport.cpp
-    ibv_helper.cpp
-)
-target_link_libraries(slime PUBLIC ibverbs)
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Python Wrapper
-find_package(pybind11 REQUIRED)
-pybind11_add_module(
-    _slime_c
-    bind.cpp
-)
-target_link_libraries(_slime_c PUBLIC slime)
+if (BUILD_BENCH)
+add_subdirectory(bench)
+endif (BUILD_BENCH)

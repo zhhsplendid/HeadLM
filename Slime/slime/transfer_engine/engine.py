@@ -1,13 +1,13 @@
 import asyncio
-import time
-import torch
-import zmq
 
+import time
 from typing import Dict, List, Tuple
 
-from .context import RDMAContext
+import zmq
 
-from slime.config import RDMAInfo, ExchangeInfo
+import torch
+
+from .context import RDMAContext
 
 
 class TransferEngine:
@@ -55,33 +55,12 @@ class TransferEngine:
         rdma_link.construct(remote_rdma_info)
         rdma_link.register_remote_mr(mr_key, remote_mr_info)
 
-    def register_mr(self, session_id, mr_key, length, device="cpu"):
+    def stop_link(self, session_id: int):
         if session_id not in self.links:
-            raise KeyError(f"session_id {id} not in links")
-        self.links[session_id].register_mr(mr_key, length, device=device)
+            raise KeyError(f'session_id {id} not in links')
+        self.links[session_id].stop_link()
+        del self.links[session_id]
 
-    def register_torch(self, session_id, mr_key, t):
-        if session_id not in self.links:
-            raise KeyError(f"session_id {id} not in links")
-        self.links[session_id].register_torch(mr_key, t)
-
-    def construct(self, id, local_info: RDMAInfo):
-        if id not in self.links:
-            raise KeyError(f"session_id {id} not in links")
-        self.links[id].construct(local_info)
-
-    def get_local_info(self, session_id: int) -> RDMAInfo:
-        if session_id not in self.links:
-            raise KeyError(f"session_id {session_id} not in links")
-        local_info = self.links[session_id].get_local_info()
-        return local_info
-
-    async def r_rdma_async(self, session_id, mr_key, target_offset,
-                           source_offset, length):
-        if session_id not in self.links:
-            raise KeyError(f"session_id {session_id} not in links")
-        await self.links[session_id].r_rdma_async(mr_key, target_offset,
-                                                  source_offset, length)
 
     async def buffered_send_tensor(self,
                                    session_id: int,
@@ -194,9 +173,3 @@ class TransferEngine:
         bandwidth = (total_data_gb) / (duration)
         print(f"Measure only the r_rdma_async data size = {total_data_gb} GB, total time = {duration} s, {bandwidth=} GB/s")
 
-
-    def stop_link(self, session_id: int):
-        if session_id not in self.links:
-            raise KeyError(f"session_id {id} not in links")
-        self.links[session_id]._rdma_context_c.stop_cq_future()
-        del self.links[session_id]

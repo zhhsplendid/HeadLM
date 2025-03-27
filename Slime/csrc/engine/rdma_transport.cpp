@@ -1,12 +1,14 @@
-#include "rdma_transport.h"
-#include "ibv_helper.h"
-#include "logging.h"
-#include "utils.h"
+#include "engine/rdma_transport.h"
+#include "engine/memory_pool.h"
+#include "utils/ibv_helper.h"
+#include "utils/logging.h"
+#include "utils/utils.h"
 
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <sys/types.h>
 #include <unistd.h>
 #include <vector>
 
@@ -21,7 +23,9 @@ namespace slime {
 
 // this is only used for recving RDMA_SEND or IMM data. this should be bigger
 // than max layers of model.
-#define MAX_RECV_WR 64
+#define MAX_RECV_WR 8192
+
+#define POLL_COUNT 64
 
 void RDMAContext::launch_cq_future()
 {
@@ -79,53 +83,62 @@ void RDMAContext::cq_poll_handle()
             SLIME_ABORT("Failed to request CQ notification");
         }
 
-        struct ibv_wc wc = {0};
+        struct ibv_wc wc[POLL_COUNT];
 
-        while (ibv_poll_cq(cq_, 1, &wc) > 0) {
-            if (wc.status == IBV_WC_SUCCESS) {
-                std::cout << "RDMA READ completed successfully." << std::endl;
-                if (wc.wr_id != 0) {
-                    wr_info_base* ptr = reinterpret_cast<wr_info_base*>(wc.wr_id);
-                    if (ptr->get_wr_type() == WrType::RDMA_READ_ACK) {
-                        SLIME_LOG_DEBUG("read cache done: Received IMM, imm_data: ", wc.imm_data);
-                        auto* info = reinterpret_cast<read_info*>(ptr);
-                        info->callback(wc.imm_data);
-                        delete info;
+        while (size_t nr_poll = ibv_poll_cq(cq_, POLL_COUNT, wc)) {
+            if (nr_poll < 0) {
+                SLIME_LOG_WARN("Worker: Failed to poll completion queues");
+                continue;
+            }
+            for (size_t i = 0; i < nr_poll; ++i) {
+                if (wc[i].status == IBV_WC_SUCCESS) {
+                    SLIME_LOG_INFO("RDMA READ completed successfully.");
+                    if (wc[i].wr_id != 0) {
+                        wr_info_base* ptr = reinterpret_cast<wr_info_base*>(wc[i].wr_id);
+                        if (ptr->get_wr_type() == WrType::RDMA_READ_ACK) {
+                            SLIME_LOG_DEBUG("read cache done: Received IMM, imm_data: " << wc[i].imm_data);
+                            auto* info = reinterpret_cast<read_info*>(ptr);
+                            info->callback(wc[i].imm_data);
+                            delete info;
+                        }
                     }
                 }
-            }
-            else {
-                std::cerr << "RDMA READ failed with status: " << ibv_wc_status_str(wc.status) << std::endl;
+                else {
+                    std::cerr << "RDMA READ failed with status: " << ibv_wc_status_str(wc[i].status) << std::endl;
+                }
             }
         }
     }
 }
 
-int64_t RDMAContext::batch_r_rdma_async(const std::vector<uintptr_t>&     target_addrs,
-                                        const std::vector<uintptr_t>&     source_addrs,
+int64_t RDMAContext::batch_r_rdma_async(const std::vector<uint64_t>&      target_offsets,
+                                        const std::vector<uint64_t>&      source_offsets,
                                         uint64_t                          length,
                                         std::string                       mr_key,
-                                        int64_t                           remote_rkey,
                                         std::function<void(unsigned int)> callback)
 {
     auto*  call_back_info = new read_info([callback](unsigned int code) { callback(code); });
-    size_t batch_size     = target_addrs.size();
+    size_t batch_size     = target_offsets.size();
 
-    struct ibv_send_wr* bad_wr = NULL;
-    struct ibv_send_wr* wr     = new ibv_send_wr[batch_size];
-    struct ibv_sge*     sge    = new ibv_sge[batch_size];
+    struct ibv_send_wr* bad_wr      = NULL;
+    struct ibv_send_wr* wr          = new ibv_send_wr[batch_size];
+    struct ibv_sge*     sge         = new ibv_sge[batch_size];
+    struct ibv_mr*      mr          = memory_pool_.get_mr(mr_key);
+    json                remote_mr   = memory_pool_.get_remote_mr(mr_key);
+    uint64_t            remote_addr = remote_mr["addr"].get<uint64_t>();
+    uint32_t            remote_rkey = remote_mr["rkey"].get<uint32_t>();
     for (size_t i = 0; i < batch_size; ++i) {
         memset(&sge[i], 0, sizeof(ibv_sge));
-        sge[i].addr   = source_addrs[i];
+        sge[i].addr   = (uint64_t)mr->addr + source_offsets[i];
         sge[i].length = length;
-        sge[i].lkey   = memory_region_[mr_key]->lkey;
+        sge[i].lkey   = mr->lkey;
 
         wr[i].wr_id               = (i == batch_size - 1) ? (uintptr_t)call_back_info : 0;
         wr[i].opcode              = IBV_WR_RDMA_READ;
         wr[i].sg_list             = &sge[i];
         wr[i].num_sge             = 1;
         wr[i].send_flags          = (i == batch_size - 1) ? IBV_SEND_SIGNALED : 0;
-        wr[i].wr.rdma.remote_addr = target_addrs[i];
+        wr[i].wr.rdma.remote_addr = remote_addr + target_offsets[i];
         wr[i].wr.rdma.rkey        = remote_rkey;
         wr[i].next                = (i == batch_size - 1) ? NULL : &wr[i + 1];
     }
@@ -147,22 +160,24 @@ int64_t RDMAContext::batch_r_rdma_async(const std::vector<uintptr_t>&     target
     return 0;
 }
 
-int64_t RDMAContext::r_rdma_async(uintptr_t                         target_addr,
-                                  uintptr_t                         source_addr,
+int64_t RDMAContext::r_rdma_async(uintptr_t                         target_offset,
+                                  uintptr_t                         source_offset,
                                   uint64_t                          length,
                                   std::string                       mr_key,
-                                  int64_t                           remote_rkey,
                                   std::function<void(unsigned int)> callback)
 {
     auto* call_back_info = new read_info([callback](unsigned int code) { callback(code); });
 
     int ret;
 
+    struct ibv_mr* mr        = memory_pool_.get_mr(mr_key);
+    json           remote_mr = memory_pool_.get_remote_mr(mr_key);
+
     struct ibv_sge sge;
     memset(&sge, 0, sizeof(sge));
-    sge.addr   = source_addr;
+    sge.addr   = (uintptr_t)mr->addr + source_offset;
     sge.length = length;
-    sge.lkey   = memory_region_[mr_key]->lkey;
+    sge.lkey   = mr->lkey;
 
     struct ibv_send_wr wr, *bad_wr = NULL;
     memset(&wr, 0, sizeof(wr));
@@ -172,8 +187,8 @@ int64_t RDMAContext::r_rdma_async(uintptr_t                         target_addr,
     wr.sg_list             = &sge;
     wr.num_sge             = 1;
     wr.send_flags          = IBV_SEND_SIGNALED;
-    wr.wr.rdma.remote_addr = target_addr;
-    wr.wr.rdma.rkey        = remote_rkey;
+    wr.wr.rdma.remote_addr = remote_mr["addr"].get<uint64_t>() + target_offset;
+    wr.wr.rdma.rkey        = remote_mr["rkey"].get<uint32_t>();
 
     {
         std::unique_lock<std::mutex> lock(rdma_post_send_mutex_);
@@ -205,7 +220,7 @@ void RDMAContext::modify_qp_to_rtsr(RDMAInfo remote_rdma_info)
     attr.rq_psn             = remote_rdma_info_.psn;
     attr.max_dest_rd_atomic = 16;
     attr.min_rnr_timer      = 12;
-    attr.ah_attr.dlid       = 0;  // RoCE v2 is used.
+    attr.ah_attr.dlid       = 0;
     attr.ah_attr.sl         = 0;
     attr.ah_attr.src_path_bits = 0;
     attr.ah_attr.port_num      = 1;
@@ -225,9 +240,6 @@ void RDMAContext::modify_qp_to_rtsr(RDMAInfo remote_rdma_info)
 
     flags = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC
             | IBV_QP_MIN_RNR_TIMER;
-
-    struct ibv_device_attr device_attr;
-    ibv_query_device(ib_ctx_, &device_attr);
 
     ret = ibv_modify_qp(qp_, &attr, flags);
     if (ret) {
@@ -256,25 +268,6 @@ void RDMAContext::modify_qp_to_rtsr(RDMAInfo remote_rdma_info)
     if (ibv_req_notify_cq(cq_, 0)) {
         SLIME_ABORT("Failed to request notify for CQ");
     }
-}
-
-int64_t RDMAContext::registerMemoryRegion(std::string mem_key, int64_t addr, size_t length)
-{
-
-    /* MemoryRegion Access Right = 777 */
-    const static int access_rights = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
-
-    ibv_mr* mr = ibv_reg_mr(pd_, (void*)addr, length, access_rights);
-
-    SLIME_ASSERT(mr, " Failed to register memory " << addr);
-
-    SLIME_LOG_INFO("Memory region: " << (void*)addr << " -- " << (void*)((uintptr_t)addr + length) << ", Device name: "
-                                     << device_name_ << ", Length: " << length << " (" << length / 1024 / 1024 << " MB)"
-                                     << ", Permission: " << access_rights << ", LKey: " << mr->lkey
-                                     << ", RKey: " << mr->rkey);
-
-    memory_region_[mem_key] = mr;
-    return 0;
 }
 
 int64_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port, std::string link_type)
@@ -356,6 +349,7 @@ int64_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port, st
         SLIME_ABORT("Failed to allocate PD");
         return -1;
     }
+    memory_pool_ = MemoryPool(pd_);
 
     /* Alloc Complete Queue (CQ) */
     SLIME_ASSERT(ib_ctx_, "init rdma context first");
@@ -372,6 +366,7 @@ int64_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port, st
     qp_init_attr.cap.max_recv_wr         = MAX_RECV_WR;
     qp_init_attr.cap.max_send_sge        = 1;
     qp_init_attr.cap.max_recv_sge        = 1;
+    qp_init_attr.sq_sig_all              = false;
 
     qp_ = ibv_create_qp(pd_, &qp_init_attr);
     if (!qp_) {
@@ -382,9 +377,10 @@ int64_t RDMAContext::init_rdma_context(std::string dev_name, uint8_t ib_port, st
     /* Modify QP to INIT state */
     struct ibv_qp_attr attr = {};
     attr.qp_state           = IBV_QPS_INIT;
-    attr.port_num           = 1;
+    attr.port_num           = ib_port_;
     attr.pkey_index         = 0;
-    attr.qp_access_flags    = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE;
+    attr.qp_access_flags =
+        IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_ATOMIC;
 
     int flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
 
