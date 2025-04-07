@@ -1,1 +1,1 @@
-This folder contains ongoing work for calling RoCE RDMA
+This folder contains ongoing work for calling RoCE/IB RDMA

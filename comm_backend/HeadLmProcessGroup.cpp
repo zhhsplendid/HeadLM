@@ -7,7 +7,7 @@
 #include <pybind11/functional.h>
 #include <pybind11/stl.h>
 
-#include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
+//#include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
 
 #include "CpuBackend.hpp"
 #include "adapter/CorexAdapter.hpp"
@@ -24,13 +24,14 @@ c10::intrusive_ptr<c10d::Backend> HeadLmProcessGroup::createHeadLmProcessGroup(
 
   DeviceCompany device_company = utils::getDeviceCompany();
 
+  /*
   if (device_company == DeviceCompany::Nvidia) {
     return c10::make_intrusive<::c10d::ProcessGroupNCCL>(store, rank, size);
   } else if (device_company == DeviceCompany::Corex) {
     CorexAdapter corex_adapter;
     corex_adapter.setUp();
     return corex_adapter.createProcessGroup(store, rank, size, timeout);
-  }
+  }*/
 
   // TODO: hardcode the CUDA here for fast test. Should change parameter after
   // we know it works
