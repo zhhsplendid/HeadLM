@@ -1,2 +1,2 @@
 pre-commit
-pytorch >= 2.2.0
+pytorch == 2.4.1 # Other versions should work but not tested yet

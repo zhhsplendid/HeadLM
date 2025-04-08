@@ -12,46 +12,45 @@ import torch.utils
 torch_install_path = os.path.dirname(
     os.path.dirname(torch.utils.cmake_prefix_path))
 torch_lib_path = os.path.join(torch_install_path, 'lib')
-print(f"{torch_install_path=}")
-print(f"{torch_lib_path=}")
+library_dirs = [torch_lib_path]
+
 sources = [
     "comm_backend/HeadLmProcessGroup.cpp",
     "comm_backend/CpuBackend.cpp",
+    "comm_backend/CrossBrandBackend.cpp",
     "comm_backend/utils/device.cpp",
     "comm_backend/head_ccl/transport/ibv_helper.cpp",
     "comm_backend/head_ccl/transport/memory_pool.cpp",
     "comm_backend/head_ccl/transport/rdma_transport.cpp",
 ]
 
-library_dirs = [torch_lib_path]
-
 include_dirs = [
     f"{os.path.dirname(os.path.abspath(__file__))}/comm_backend/",
-    f"{os.path.dirname(os.path.abspath(__file__))}/comm_backend/adapter",
     f"{torch_install_path}/include/",
-    f"{torch_install_path}/include/torch/csrc/cuda"
+    f"{torch_install_path}/include/torch/csrc/cuda",
+    '/usr/include/infiniband',
+]
+
+libraries = ["ibverbs", "zmq"]
+
+extra_compile_args = [
+    '-DUSE_C10D_GLOO=1', '-DUSE_C10D_NCCL=1', '-DUSE_GLOG', '-Wno-error'
 ]
 
 if torch.cuda.is_available():
     module = cpp_extension.CUDAExtension(name="headlm_comm",
                                          sources=sources,
                                          include_dirs=include_dirs,
-                                         extra_compile_args=[
-                                             '-DUSE_C10D_GLOO=1',
-                                             '-DUSE_C10D_NCCL=1',
-                                             '-DUSE_GLOG',
-                                             '-Wno-error'
-                                         ])
+                                         libraries=libraries,
+                                         library_dirs=library_dirs,
+                                         extra_compile_args=extra_compile_args)
 else:
     module = cpp_extension.CppExtension(name="headlm_comm",
                                         sources=sources,
                                         include_dirs=include_dirs,
-                                        extra_compile_args=[
-                                            '-DUSE_C10D_GLOO=1',
-                                            '-DUSE_C10D_NCCL=1',
-                                            '-DUSE_GLOG',
-                                            '-Wno-error'
-                                        ])
+                                        libraries=libraries,
+                                        library_dirs=library_dirs,
+                                        extra_compile_args=extra_compile_args)
 
 setup(name="Headlm-Communication",
       version="0.0.1",

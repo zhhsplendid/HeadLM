@@ -57,7 +57,7 @@ inline int get_log_level()
     }
 
 #define HEADLM_ASSERT_EQ(A, B, Msg, ...) HEADLM_ASSERT((A) == (B), Msg, __VA_ARGS__)
-#define HEADLM_ASSERT_NE(A, B, Msg, ...) HEADLM_ASSERT((A) == (B), Msg, __VA_ARGS__)
+#define HEADLM_ASSERT_NE(A, B, Msg, ...) HEADLM_ASSERT((A) != (B), Msg, __VA_ARGS__)
 
 #define HEADLM_ABORT(Msg, ...)                                                                                          \
     {                                                                                                                  \
