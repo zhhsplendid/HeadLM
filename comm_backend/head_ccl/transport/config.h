@@ -11,6 +11,7 @@
 #include "utils/logging.h"
 #include "utils/json.hpp"
 
+namespace comm_backend {
 namespace head_ccl {
 namespace transport {
 
@@ -90,6 +91,6 @@ struct recv_info: wr_info_base {
     recv_info(std::function<void(int64_t)> callback): wr_info_base(WrType::RDMA_RECV_ACK), callback(callback) {}
 };
 
-
-};  // namespace transport
-};  // namespace head_ccl
+}  // namespace comm_backend
+}  // namespace transport
+}  // namespace head_ccl

@@ -3,7 +3,7 @@ int ibv_read_sysfs_file(const char* dir, const char* file, char* buf, size_t siz
 {
     char* path;
     int   fd;
-    int   len;
+    size_t   len;
 
     if (asprintf(&path, "%s/%s", dir, file) < 0)
         return -1;

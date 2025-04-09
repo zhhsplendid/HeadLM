@@ -17,6 +17,7 @@
 #include "head_ccl/transport/memory_pool.h"
 #include "utils/logging.h"
 
+namespace comm_backend {
 namespace head_ccl {
 namespace transport {
 
@@ -509,3 +510,4 @@ int RdmaContext::init_rdma_context(const std::string &dev_name, uint8_t ib_port,
 
 } // namespace transport
 } // namespace head_ccl
+} // namespace comm_backend

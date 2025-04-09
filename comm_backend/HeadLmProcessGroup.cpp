@@ -1,6 +1,7 @@
 #include "HeadLmProcessGroup.hpp"
 
 #include <cstdlib>
+#include <string>
 
 #include <pybind11/chrono.h>
 #include <pybind11/complex.h>
@@ -13,6 +14,7 @@
 #include "CrossBrandBackend.hpp"
 #include "adapter/CorexAdapter.hpp"
 #include "utils/device.hpp"
+#include "utils/logging.h"
 
 namespace comm_backend {
 
@@ -38,6 +40,12 @@ c10::intrusive_ptr<c10d::Backend> HeadLmProcessGroup::createHeadLmProcessGroup(
   // we know it works
   //return c10::make_intrusive<CpuBackend>(store, rank, size, timeout,
   //                                       c10::DeviceType::CUDA);
+  
+  std::string backend_choice = get_env_variable("HEADLM_BACKEND");
+  if (backend_choice == "CPU" || backend_choice == "cpu" || backend_choice == "Cpu") {
+    return c10::make_intrusive<CpuBackend>(store, rank, size, timeout,
+                                             c10::DeviceType::CUDA);
+  }
   return c10::make_intrusive<CrossBrandBackend>(store, rank, size, timeout,
                                            c10::DeviceType::CUDA);
 }

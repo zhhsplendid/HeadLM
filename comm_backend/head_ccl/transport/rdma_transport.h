@@ -15,6 +15,7 @@
 #include "head_ccl/transport/memory_pool.h"
 #include "utils/json.hpp"
 
+namespace comm_backend {
 namespace head_ccl {
 namespace transport {
 
@@ -114,3 +115,4 @@ private:
 
 } // namespace transport
 } // namespace head_ccl
+}  // namespace comm_backend

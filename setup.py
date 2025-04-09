@@ -18,7 +18,10 @@ sources = [
     "comm_backend/HeadLmProcessGroup.cpp",
     "comm_backend/CpuBackend.cpp",
     "comm_backend/CrossBrandBackend.cpp",
+    "comm_backend/utils/addr_util.cpp",
     "comm_backend/utils/device.cpp",
+    "comm_backend/head_ccl/topo.cpp",
+    "comm_backend/head_ccl/topo_node.cpp",
     "comm_backend/head_ccl/transport/ibv_helper.cpp",
     "comm_backend/head_ccl/transport/memory_pool.cpp",
     "comm_backend/head_ccl/transport/rdma_transport.cpp",
@@ -26,6 +29,7 @@ sources = [
 
 include_dirs = [
     f"{os.path.dirname(os.path.abspath(__file__))}/comm_backend/",
+    f"{os.path.dirname(os.path.abspath(__file__))}/comm_backend/head_ccl",
     f"{torch_install_path}/include/",
     f"{torch_install_path}/include/torch/csrc/cuda",
     '/usr/include/infiniband',

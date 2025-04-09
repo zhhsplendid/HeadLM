@@ -9,15 +9,16 @@
 #include <sys/types.h>
 #include <unordered_map>
 
+namespace comm_backend {
 namespace head_ccl {
 namespace transport {
 
 using json = nlohmann::json;
 
 /**
- * Class for necessary memory region information which will be used later
+ * struct for necessary memory region information which will be used later
  */
-class MrInfo {
+struct MrInfo {
 public:
   uint64_t addr;
   uint32_t lkey;
@@ -80,3 +81,4 @@ private:
 
 }  // namespace transport
 }  // namespace head_ccl
+}  // namespace comm_backend

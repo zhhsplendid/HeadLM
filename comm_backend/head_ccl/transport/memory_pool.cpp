@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include "memory_pool.h"
 
+namespace comm_backend {
 namespace head_ccl {
 namespace transport {
 
@@ -72,3 +73,4 @@ json MemoryPool::local_mr_info_to_json()
 
 }  // namespace transport
 }  // namespace head_ccl
+}  // namespace comm_backend
