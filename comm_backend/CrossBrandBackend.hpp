@@ -23,7 +23,7 @@
 
 #include <iostream>
 
-
+#include "head_ccl/topo.hpp"
 
 namespace comm_backend {
 
@@ -51,6 +51,7 @@ public:
 
 private:
   DeviceType origin_device_type_;
+  head_ccl::TopoGraph* topo_graph_;
 };
 
 } // namespace comm_backend

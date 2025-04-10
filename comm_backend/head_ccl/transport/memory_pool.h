@@ -1,13 +1,13 @@
 #pragma once
 
-#include "head_ccl/transport/config.h"
-
 #include <cstdint>
 #include <cstdlib>
 #include <infiniband/verbs.h>
 #include <string>
 #include <sys/types.h>
 #include <unordered_map>
+
+#include "head_ccl/transport/rdma_types.h"
 
 namespace comm_backend {
 namespace head_ccl {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "head_ccl/transport/config.h"
+
 
 #include <cstdint>
 #include <functional>
@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "head_ccl/transport/memory_pool.h"
+#include "head_ccl/transport/rdma_types.h"
 #include "utils/json.hpp"
 
 namespace comm_backend {

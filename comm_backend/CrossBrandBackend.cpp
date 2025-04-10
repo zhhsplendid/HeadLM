@@ -9,6 +9,7 @@
 #include <pybind11/stl.h>
 #include <zmq.hpp>
 
+#include "head_ccl/topo.hpp"
 #include "utils/addr_util.hpp"
 #include "utils/json.hpp"
 #include "utils/logging.h"
@@ -22,25 +23,16 @@ CrossBrandBackend::CrossBrandBackend(
 
   // TODO: currently just do init here, we should move it to better place
   // when we finish topo analysis
-  /*
-  std::string master_ip = get_master_addr();
-  int master_port = get_master_port();
-  std::string local_ip = get_local_ip();
-  int local_port = master_port;
+  
+  std::string master_ip = utils::get_master_addr();
+  std::string local_ip = utils::get_local_ip();
 
-  // TODO: just test purpose now, so we have a master and client test
-  if (local_ip == master_ip) {
-    
-    
-    zmq::context_t context(1); // io_threads = 1
-    zmq::socket_t socket(context, ZMQ_REP);
-    socket.bind("tcp:xxx5555");
-  } else {
-
-    
-
+  topo_graph_ = nullptr;
+  if (local_ip != master_ip) {
+    head_ccl::WorkerSendInitJson();
+  } else if (rank == 0) {
+    head_ccl::MasterCollectInitJson(topo_graph_);
   }
-  */
 }
 
 c10::intrusive_ptr<Work>

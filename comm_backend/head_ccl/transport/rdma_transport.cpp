@@ -12,9 +12,9 @@
 #include <stdexcept>
 #include <sys/socket.h>
 
-#include "head_ccl/transport/config.h"
 #include "head_ccl/transport/ibv_helper.h"
 #include "head_ccl/transport/memory_pool.h"
+#include "head_ccl/transport/rdma_types.h"
 #include "utils/logging.h"
 
 namespace comm_backend {
