@@ -7,6 +7,7 @@
 #include <string>
 
 #include "utils/logging.h"
+#include "global_config.hpp"
 
 
 namespace comm_backend {
@@ -55,7 +56,7 @@ std::string get_local_ip() {
 
 int get_local_port(int local_rank) {
     std::string local_port_str = get_env_variable("LOCAL_PORT_START");
-    int local_port_start = local_port_str.empty() ? 32768 : std::stoi(local_port_str);
+    int local_port_start = local_port_str.empty() ? DEFAULT_PORT_START : std::stoi(local_port_str);
     return local_port_start + local_rank;
 }
 
