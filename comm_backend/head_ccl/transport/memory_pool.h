@@ -33,9 +33,10 @@ public:
   }
 
   MrInfo(const json& json_mr_info) {
-    addr = json_mr_info["addr"];
-    lkey = json_mr_info["lkey"];
-    rkey = json_mr_info["rkey"];
+    auto sub_json = json_mr_info["mr_info"];
+    addr = sub_json["addr"];
+    lkey = sub_json["lkey"];
+    rkey = sub_json["rkey"];
   }
 
   json to_json() {
@@ -49,7 +50,7 @@ public:
     MemoryPool(ibv_pd* pd): pd_(pd) {}
     ~MemoryPool();
 
-    int register_memory_region(const std::string& mr_key,
+    MrInfo register_memory_region(const std::string& mr_key,
                                uintptr_t data_ptr,
                                uint64_t length);
 
@@ -71,6 +72,8 @@ public:
     }
 
     json local_mr_info_to_json();
+
+    int register_remote_mr_info_from_json(const json& j);
 
 private:
     ibv_pd*                                       pd_;

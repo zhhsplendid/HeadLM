@@ -18,7 +18,7 @@ MemoryPool::~MemoryPool(){
     }
 }
 
-int MemoryPool::register_memory_region(const std::string& mr_key,
+MrInfo MemoryPool::register_memory_region(const std::string& mr_key,
     uintptr_t data_ptr,
     uint64_t length)
 {
@@ -35,8 +35,9 @@ int MemoryPool::register_memory_region(const std::string& mr_key,
                                      << ", RKey: " << mr->rkey);
     uint64_t addr = reinterpret_cast<uint64_t>(mr->addr);
     addrs_to_mrs_[addr] = mr;
-    mr_info_[mr_key] = MrInfo(addr, mr->lkey, mr->rkey);
-    return 0;
+    MrInfo info(addr, mr->lkey, mr->rkey);
+    mr_info_[mr_key] = info;
+    return info;
 }
 
 int MemoryPool::deregister_memory_region(const std::string& mr_key)
@@ -69,6 +70,16 @@ json MemoryPool::local_mr_info_to_json()
         mr_info[m.first] = m.second.to_json();
     }
     return mr_info;
+}
+
+int MemoryPool::register_remote_mr_info_from_json(const json &j)
+{
+    for (auto& elem : j.items()) {
+        std::string mr_key = elem.key();
+        MrInfo info(elem.value());
+        register_remote_memory_region(mr_key, info);
+    }
+    return 0;
 }
 
 }  // namespace transport

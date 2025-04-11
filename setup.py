@@ -20,6 +20,7 @@ sources = [
     "comm_backend/CrossBrandBackend.cpp",
     "comm_backend/utils/addr_util.cpp",
     "comm_backend/utils/device.cpp",
+    "comm_backend/head_ccl/communicator.cpp",
     "comm_backend/head_ccl/topo.cpp",
     "comm_backend/head_ccl/topo_node.cpp",
     "comm_backend/head_ccl/transport/ibv_helper.cpp",
