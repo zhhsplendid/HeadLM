@@ -35,7 +35,7 @@ public:
   void recvTensorAsync(at::Tensor* tensor, const std::function<void(int64_t)> &callback);
   
 private:
-  RdmaContext rdma_ctx_;
+  RdmaContext* rdma_ctx_;
 
   zmq::context_t* zmq_ctx_ = nullptr;
   zmq::socket_t* send_socket_ = nullptr;
